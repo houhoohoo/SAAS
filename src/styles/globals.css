@@ -1,0 +1,43 @@
+:root {
+    --primary: #6e6edf;
+    --primary-hover: #5d5dc5;
+    --primary-light: #f0f0ff;
+    --secondary: #f7f7ff;
+    --border: #e0e0ff;
+    --text: #333;
+    --text-light: #666;
+    --text-lighter: #999;
+    --danger: #ff4d4f;
+    --danger-hover: #e04345;
+    --success: #52c41a;
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    --radius: 12px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+}
+
+.app {
+    display: flex;
+    height: 100vh;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .app {
+        flex-direction: column;
+    }
+}

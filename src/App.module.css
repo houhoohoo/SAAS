@@ -1,0 +1,23 @@
+.app {
+  display: flex;
+  height: 100vh;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .app {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 50vh;
+  }
+
+  .chatWindow {
+    height: calc(100vh - 50vh);
+  }
+}
