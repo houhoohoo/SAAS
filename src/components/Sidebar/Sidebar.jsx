@@ -20,7 +20,7 @@ const Sidebar = ({
                     fullWidth
                     onClick={onNewConversation}
                 >
-                    <Icon name="plus" size={16} /> 新建对话
+                    <Icon name="PlusCircleOutlined" size={16} /> 新建对话
                 </Button>
             </div>
 
@@ -39,7 +39,7 @@ const Sidebar = ({
                                 onDeleteConversation(conv.id);
                             }}
                         >
-                            <Icon name="close" size={14} />
+                            <Icon name="CloseOutlined" size={14} />
                         </button>
                     </div>
                 ))}
@@ -51,7 +51,7 @@ const Sidebar = ({
                     fullWidth
                     onClick={onShowFileUpload}
                 >
-                    <Icon name="upload" size={16} /> 上传文件
+                    <Icon name="UploadOutlined" size={16} /> 上传文件
                 </Button>
             </div>
         </div>

@@ -65,7 +65,7 @@ const FileUpload = ({ onClose, onUpload }) => {
                 <div className={styles.header}>
                     <h3>上传文件</h3>
                     <button className={styles.closeButton} onClick={onClose}>
-                        <Icon name="close" size={20} />
+                        <Icon name="CloseOutlined" size={20} />
                     </button>
                 </div>
 
@@ -76,7 +76,7 @@ const FileUpload = ({ onClose, onUpload }) => {
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current.click()}
                 >
-                    <Icon name="upload" size={48} />
+                    <Icon name="UploadOutlined" size={48} />
                     <p>拖放文件到此处，或<strong>点击选择文件</strong></p>
                     <p className={styles.hint}>支持 PDF, TXT, DOCX 等文档格式</p>
                 </div>
@@ -97,7 +97,7 @@ const FileUpload = ({ onClose, onUpload }) => {
                                 <li key={index}>
                                     <div className={styles.fileInfo}>
                                         <div className={styles.fileIcon}>
-                                            <Icon name="file" size={20} />
+                                            <Icon name="FileOutlined" size={20} />
                                         </div>
                                         <div className={styles.fileName}>{file.name}</div>
                                         <div className={styles.fileSize}>{formatFileSize(file.size)}</div>
@@ -106,7 +106,7 @@ const FileUpload = ({ onClose, onUpload }) => {
                                         className={styles.removeButton}
                                         onClick={() => removeFile(index)}
                                     >
-                                        <Icon name="close" size={14} />
+                                        <Icon name="CloseOutlined" size={14} />
                                     </button>
                                 </li>
                             ))}

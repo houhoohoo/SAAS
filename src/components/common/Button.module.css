@@ -3,11 +3,28 @@
     align-items: center;
     justify-content: center;
     border: none;
-    border-radius: var(--radius);
     cursor: pointer;
     transition: all 0.2s;
     font-weight: 500;
     gap: 8px;
+}
+
+/* 形状样式 - 修复圆形按钮 */
+.rounded {
+    border-radius: var(--radius);
+}
+
+.circle {
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1/1;
+    /* 确保是正方形 */
+}
+
+.square {
+    border-radius: 0;
 }
 
 /* 变体样式 */
@@ -22,8 +39,8 @@
 
 .secondary {
     background-color: white;
-    border: 1px solid var(--border);
-    color: var(--text);
+    border: 1px solid var(--primary);
+    color: var(--primary);
 }
 
 .secondary:hover:not(:disabled) {
@@ -55,14 +72,18 @@
     background: transparent;
     color: inherit;
     padding: 0;
-    width: 40px;
-    height: 40px;
 }
 
-/* 尺寸样式 */
+/* 尺寸样式 - 添加圆形按钮的固定尺寸 */
 .small {
     padding: 6px 12px;
     font-size: 13px;
+}
+
+.small.circle {
+    width: 32px;
+    height: 32px;
+    padding: 0;
 }
 
 .medium {
@@ -70,9 +91,21 @@
     font-size: 14px;
 }
 
+.medium.circle {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+}
+
 .large {
     padding: 12px 24px;
     font-size: 16px;
+}
+
+.large.circle {
+    width: 48px;
+    height: 48px;
+    padding: 0;
 }
 
 /* 其他状态 */
@@ -84,3 +117,4 @@
     opacity: 0.6;
     cursor: not-allowed;
 }
+
