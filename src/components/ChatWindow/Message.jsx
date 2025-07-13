@@ -11,11 +11,11 @@ const Message = ({ message }) => {
             <div className={styles.avatar}>
                 {isAI ? (
                     <div className={styles.aiAvatar}>
-                        <Icon name="ai" size={24} />
+                        <Icon name="AI" size={24} />
                     </div>
                 ) : (
                     <div className={styles.userAvatar}>
-                        <Icon name="user" size={24} />
+                        <Icon name="User" size={24} />
                     </div>
                 )}
             </div>

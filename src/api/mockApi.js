@@ -71,7 +71,7 @@ export const sendMessage = async (conversationId, message) => {
     // 模拟AI响应
     const aiResponse = {
         id: `msg-${Date.now()}-ai`,
-        text: `感谢您的消息："${message}"。这是一个模拟的AI回复，实际应用中这里会是真实的AI模型生成的响应。`,
+        text: `test："${message}"。这是一个模拟的AI回复，实际应用中这里会是真实的AI模型生成的响应。`,
         sender: 'ai',
         timestamp: new Date().toISOString()
     };

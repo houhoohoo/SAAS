@@ -5,65 +5,99 @@ import Loader from '../common/Loader';
 import Icon from '../common/Icon';
 import styles from './ChatWindow.module.css';
 
+const EmptyState = ({
+    title = '你好！我是DeepSeek助手',
+    description = '你可以问我任何问题，我会尽力为你解答',
+    onStartChat,
+    suggestions = []
+}) => {
+    return (
+        <div className={styles.emptyState}>
+            <div className={styles.aiAvatar}>
+                <Icon name="RobotOutlined" size={48} />
+            </div>
+            <h3>{title}</h3>
+            <p>{description}</p>
+
+            <div className={styles.suggestions}>
+                {suggestions.map((suggestion, index) => (
+                    <Button
+                        key={index}
+                        variant="outline"
+                        onClick={() => onStartChat?.(suggestion)}
+                    >
+                        {suggestion}
+                    </Button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const ChatWindow = ({
     conversation,
     isGenerating,
     onSendMessage,
-    onInterrupt
+    onInterrupt,
+    onCreateNewConversation
 }) => {
     const [inputValue, setInputValue] = useState('');
     const messagesEndRef = useRef(null);
+    const [isFirstMessage, setIsFirstMessage] = useState(true);
 
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!inputValue.trim() || isGenerating) return;
 
+        // 如果是第一条消息，创建新对话
+        if (isFirstMessage) {
+            onCreateNewConversation?.();
+            setIsFirstMessage(false);
+        }
+
         onSendMessage(inputValue);
         setInputValue('');
     };
 
+    const handleStartChat = (message) => {
+        // 创建新对话并发送第一条消息
+        onCreateNewConversation?.();
+        onSendMessage(message);
+        setIsFirstMessage(false);
+    };
+
     // 滚动到底部
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (conversation?.messages?.length > 0) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     }, [conversation?.messages]);
 
-    if (!conversation) {
-        return (
-            <div className={styles.chatWindow}>
-                <div className={styles.emptyState}>
-                    <div className={styles.aiAvatar}>
-                        <Icon name="ai" size={48} />
-                    </div>
-                    <h3>欢迎使用DeepSeek助手</h3>
-                    <p>请从侧边栏选择对话或创建新对话</p>
-                    <Button onClick={() => onSendMessage && onSendMessage('你好')}>
-                        开始对话
-                    </Button>
-                </div>
-            </div>
-        );
-    }
+    const defaultSuggestions = [
+        '如何学习React?',
+        'JavaScript闭包是什么?',
+        '解释一下事件循环'
+    ];
+
+    // 计算是否显示居中布局（没有对话或没有消息）
+    const showCenteredLayout = !conversation || conversation.messages.length === 0;
 
     return (
-        <div className={styles.chatWindow}>
-            <div className={styles.header}>
-                <h2>{conversation.title}</h2>
-            </div>
+        <div className={`${styles.chatWindow} ${showCenteredLayout ? styles.centeredLayout : ''}`}>
+            {conversation && (
+                <div className={styles.header}>
+                    <h2>{conversation.title || '新对话'}</h2>
+                </div>
+            )}
 
             <div className={styles.messagesContainer}>
-                {conversation.messages.length === 0 ? (
-                    <div className={styles.emptyState}>
-                        <div className={styles.aiAvatar}>
-                            <Icon name="ai" size={48} />
-                        </div>
-                        <h3>你好！我是DeepSeek助手</h3>
-                        <p>你可以问我任何问题，我会尽力为你解答</p>
-                        <div className={styles.suggestions}>
-                            <Button variant="outline">如何学习React?</Button>
-                            <Button variant="outline">JavaScript闭包是什么?</Button>
-                            <Button variant="outline">解释一下事件循环</Button>
-                        </div>
-                    </div>
+                {showCenteredLayout ? (
+                    <EmptyState
+                        title={conversation ? '你好！我是DeepSeek助手' : '欢迎使用DeepSeek助手'}
+                        description={conversation ? '你可以问我任何问题，我会尽力为你解答' : '开始与AI助手对话'}
+                        onStartChat={handleStartChat}
+                        suggestions={conversation ? defaultSuggestions : []}
+                    />
                 ) : (
                     conversation.messages.map(msg => (
                         <Message
@@ -75,7 +109,7 @@ const ChatWindow = ({
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className={styles.inputArea}>
+            <div className={`${styles.inputArea} ${showCenteredLayout ? styles.centeredInput : ''}`}>
                 {isGenerating && (
                     <div className={styles.generatingIndicator}>
                         <Loader size="small" />
@@ -103,7 +137,7 @@ const ChatWindow = ({
                             variant="icon"
                             disabled={!inputValue.trim() || isGenerating}
                         >
-                            <Icon name="send" size={20} />
+                            <Icon name="SendOutlined" size={20} />
                         </Button>
                     </div>
                 </form>
