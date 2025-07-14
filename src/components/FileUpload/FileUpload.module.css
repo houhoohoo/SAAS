@@ -61,7 +61,7 @@
 
 .dropArea.dragging {
     border-color: var(--primary);
-    background-color: rgba(110, 110, 223, 0.05);
+    background-color: rgba(110, 136, 223, 0.05);
 }
 
 .dropArea p {

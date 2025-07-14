@@ -5,6 +5,39 @@ import Loader from "../common/Loader";
 import Icon from "../common/Icon";
 import styles from "./ChatWindow.module.css";
 
+//已上传文件显示
+const FileList = ({ files, removeFile, formatFileSize }) => {
+    if (files.length === 0) return null;
+
+    return (
+        <div className={styles.horizontalFileList}>
+            {files.map((file, index) => (
+                <div key={index} className={styles.fileCard}>
+                    <div className={styles.fileCardContent}>
+                        <div className={styles.fileIcon}>
+                            <Icon name="FileOutlined" size={20} />
+                        </div>
+                        <div className={styles.fileInfo}>
+                            <div className={styles.fileName}>{file.name}</div>
+                            <div className={styles.fileSize}>
+                                {formatFileSize(file.size)}
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        className={styles.removeButton}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            removeFile(index);
+                        }}>
+                        <Icon name="CloseOutlined" size={14} />
+                    </button>
+                </div>
+            ))}
+        </div>
+    );
+};
+
 // 空状态组件
 const EmptyState = ({
     title = "科研成果评价系统",
@@ -95,35 +128,11 @@ const EmptyState = ({
             )}
 
             {/* 已上传文件列表 */}
-            {files.length > 0 && (
-                <div className={styles.fileList}>
-                    <ul>
-                        {files.map((file, index) => (
-                            <li key={index}>
-                                <div className={styles.fileInfo}>
-                                    <div className={styles.fileIcon}>
-                                        <Icon name="FileOutlined" size={20} />
-                                    </div>
-                                    <div className={styles.fileName}>
-                                        {file.name}
-                                    </div>
-                                    <div className={styles.fileSize}>
-                                        {formatFileSize(file.size)}
-                                    </div>
-                                </div>
-                                <button
-                                    className={styles.removeButton}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        removeFile(index);
-                                    }}>
-                                    <Icon name="CloseOutlined" size={14} />
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+            <FileList
+                files={files}
+                removeFile={removeFile}
+                formatFileSize={formatFileSize}
+            />
         </div>
     );
 };
@@ -361,6 +370,12 @@ const ChatWindow = ({
                     className={`${styles.inputArea} ${
                         isTransitioning ? styles.transitioningBottomInput : ""
                     }`}>
+                    <FileList
+                        files={files}
+                        removeFile={removeFile}
+                        formatFileSize={formatFileSize}
+                    />
+
                     {isGenerating && (
                         <div className={styles.generatingIndicator}>
                             <Loader size="small" />

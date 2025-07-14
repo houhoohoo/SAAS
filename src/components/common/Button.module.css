@@ -44,7 +44,7 @@
 }
 
 .secondary:hover:not(:disabled) {
-    background-color: #f0f0ff;
+    background-color: var(--secondary);
 }
 
 .danger-outline {
@@ -64,7 +64,7 @@
 }
 
 .outline:hover:not(:disabled) {
-    background-color: #f0f0ff;
+    background-color: var(--secondary);
     border-color: var(--primary);
 }
 
