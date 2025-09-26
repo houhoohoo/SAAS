@@ -9,8 +9,15 @@ const ChatWindowContainer = () => {
         conversations,
         activeConversation,
         isGenerating,
+        isUploading,
         sendMessage,
         interruptConversation,
+        uploadFiles, // 直接从context获取
+        regenerateMessage,
+        editMessage,
+        onCopyMessage,
+        onFavoriteMessage,
+        onLikeMessage,
     } = useChat();
 
     const conversation = conversations.find((c) => c.id === activeConversation);
@@ -20,9 +27,15 @@ const ChatWindowContainer = () => {
             <ChatWindow
                 conversation={conversation}
                 isGenerating={isGenerating}
+                isUploading={isUploading} // 传递上传状态
                 onSendMessage={sendMessage}
                 onInterrupt={interruptConversation}
-                onShowFileUpload={() => setShowFileUpload(true)}
+                uploadFilesHandler={uploadFiles} // 直接使用context中的方法
+                onRegenerate={regenerateMessage}
+                onEditMessage={editMessage}
+                onCopyMessage={onCopyMessage}
+                onFavoriteMessage={onFavoriteMessage}
+                onLikeMessage={onLikeMessage}
             />
             {showFileUpload && (
                 <FileUpload onClose={() => setShowFileUpload(false)} />

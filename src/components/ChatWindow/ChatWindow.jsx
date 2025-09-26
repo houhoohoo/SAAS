@@ -4,13 +4,80 @@ import Button from "../common/Button";
 import Loader from "../common/Loader";
 import Icon from "../common/Icon";
 import styles from "./ChatWindow.module.css";
+import PdfViewer from "./PdfViewer";
 
-//已上传文件显示
-const FileList = ({ files, removeFile, formatFileSize }) => {
+// 修改后的 MessageFileList 组件（在ChatWindow.jsx中）
+const MessageFileList = ({ files, formatFileSize, onViewPdf }) => {
+    if (!files || files.length === 0) return null;
+
+    return (
+        <div className={styles.messageFileList}>
+            {files.map((file, index) => (
+                <MessageFileItem
+                    key={index}
+                    file={file}
+                    formatFileSize={formatFileSize}
+                    onViewPdf={onViewPdf}
+                />
+            ))}
+        </div>
+    );
+};
+
+// 新增独立的MessageFileItem组件
+const MessageFileItem = ({ file, formatFileSize, onViewPdf }) => {
+    const [isHovered, setIsHovered] = useState(false);
+
+    const isPdf = file.type === "application/pdf";
+
+    return (
+        <div
+            className={styles.messageFileItem}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}>
+            <div className={styles.messageFileIcon}>
+                <Icon
+                    name={isPdf ? "FilePdfOutlined" : "FileOutlined"}
+                    size={16}
+                />
+            </div>
+            <div className={styles.messageFileInfo}>
+                <div className={styles.messageFileName}>{file.name}</div>
+                <div className={styles.messageFileSize}>
+                    {formatFileSize(file.size)}
+                </div>
+            </div>
+
+            {/* PDF预览按钮 - 只在PDF文件上显示，且悬停时显示 */}
+            {isPdf && (
+                <div
+                    className={`${styles.pdfPreviewButton} ${
+                        isHovered ? styles.visible : ""
+                    }`}>
+                    <Button
+                        variant="secondary"
+                        shape="circle"
+                        size="small"
+                        onClick={() => onViewPdf(file)}
+                        title="预览PDF"
+                        className={styles.previewBtn}>
+                        <Icon name="EyeOutlined" size={14} />
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// 文件列表组件（用于输入区域）
+const FileList = ({ files, removeFile, formatFileSize, compact = false }) => {
     if (files.length === 0) return null;
 
     return (
-        <div className={styles.horizontalFileList}>
+        <div
+            className={`${styles.horizontalFileList} ${
+                compact ? styles.compact : ""
+            }`}>
             {files.map((file, index) => (
                 <div key={index} className={styles.fileCard}>
                     <div className={styles.fileCardContent}>
@@ -48,14 +115,14 @@ const EmptyState = ({
     isGenerating,
     onSubmit,
     isTransitioning,
-    files, //上传的文件列表
-    handleDrop, //处理文件拖放
-    handleDragOver, //处理拖拽悬停
-    handleDragLeave, //处理拖拽离开
-    isDragging, //是否正在拖拽
-    removeFile, //移除文件
-    formatFileSize, //格式化文件大小
-    handleFileSelect, //处理文件选择
+    files,
+    handleDrop,
+    handleDragOver,
+    handleDragLeave,
+    isDragging,
+    removeFile,
+    formatFileSize,
+    handleFileSelect,
 }) => {
     return (
         <div
@@ -144,16 +211,39 @@ const ChatWindow = ({
     onSendMessage,
     onInterrupt,
     uploadFilesHandler,
+    onRegenerate, // 新增重新生成回调
+    onEditMessage, // 新增编辑消息回调
+    onCopyMessage, // 新增复制消息回调
+    onFavoriteMessage, // 新增收藏消息回调
+    onLikeMessage, // 新增点赞消息回调
 }) => {
     const [inputValue, setInputValue] = useState("");
+    const [editingMessage, setEditingMessage] = useState(null); // 正在编辑的消息ID
+    // eslint-disable-next-line no-unused-vars
+    const [editContent, setEditContent] = useState(""); // 编辑内容
     const [isTransitioning, setIsTransitioning] = useState(false);
     const [files, setFiles] = useState([]);
     const [isDragging, setIsDragging] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
-    const transitionTimerRef = useRef(null); // 使用ref管理定时器
+    const transitionTimerRef = useRef(null);
     const prevMessagesLength = useRef(0);
+    const editInputRef = useRef(null);
+    const [viewingPdf, setViewingPdf] = useState(null);
+
+    // 查看PDF文件
+    const handleViewPdf = (file) => {
+        setViewingPdf(file);
+    };
+
+    // 关闭PDF预览
+    const handleClosePdf = () => {
+        if (viewingPdf?.url?.startsWith("blob:")) {
+            URL.revokeObjectURL(viewingPdf.url); // ⭐ 释放 blob URL
+        }
+        setViewingPdf(null);
+    };
 
     // 清除所有挂起的过渡定时器
     const clearTransitionTimers = useCallback(() => {
@@ -165,25 +255,45 @@ const ChatWindow = ({
 
     // 当对话变化时重置状态
     useEffect(() => {
-        // 立即清除所有挂起的动画
         clearTransitionTimers();
-
-        // 重置过渡状态
         setIsTransitioning(false);
-
-        // 重置文件列表和输入
         setFiles([]);
         setInputValue("");
+        setEditingMessage(null);
     }, [conversation, clearTransitionTimers]);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (!inputValue.trim() || isGenerating) return;
 
-        onSendMessage(inputValue);
+        // 如果有文件，先上传文件
+        let filesToSend = [];
+        if (files.length > 0) {
+            setIsUploading(true);
+            try {
+                filesToSend = await uploadFilesHandler(files);
+            } catch (error) {
+                console.error("上传失败:", error);
+                setIsUploading(false);
+                return;
+            }
+            setIsUploading(false);
+        }
+
+        // 如果有正在编辑的消息，则发送编辑后的内容
+        if (editingMessage) {
+            console.log("编辑消息:", editingMessage, inputValue, filesToSend);
+            await onEditMessage(editingMessage, inputValue, filesToSend);
+            setEditingMessage(null);
+            setEditContent("");
+        } else {
+            // 否则发送新消息
+            onSendMessage(inputValue, filesToSend);
+        }
+
+        setFiles([]);
         setInputValue("");
     };
-
     // 滚动到底部
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -194,13 +304,10 @@ const ChatWindow = ({
         const currentMessagesLength = conversation?.messages.length || 0;
         const prevLength = prevMessagesLength.current;
 
-        // 清除之前的定时器
         clearTransitionTimers();
 
         if (prevLength === 0 && currentMessagesLength > 0) {
             setIsTransitioning(true);
-
-            // 设置新定时器（保持500ms动画时间）
             transitionTimerRef.current = setTimeout(() => {
                 setIsTransitioning(false);
             }, 500);
@@ -208,7 +315,6 @@ const ChatWindow = ({
 
         prevMessagesLength.current = currentMessagesLength;
 
-        // 组件卸载时清理
         return () => clearTransitionTimers();
     }, [conversation?.messages, clearTransitionTimers]);
 
@@ -234,8 +340,9 @@ const ChatWindow = ({
         if (e.target.files.length > 0) {
             const newFiles = Array.from(e.target.files);
             setFiles((prev) => [...prev, ...newFiles]);
-            uploadFiles(newFiles); // 自动上传
+            // uploadFiles(newFiles);
         }
+        e.target.value = "";
     }, []);
 
     // 处理拖拽悬停
@@ -257,33 +364,34 @@ const ChatWindow = ({
         if (e.dataTransfer.files.length > 0) {
             const newFiles = Array.from(e.dataTransfer.files);
             setFiles((prev) => [...prev, ...newFiles]);
-            uploadFiles(newFiles); // 自动上传
+            // uploadFiles(newFiles);
         }
     }, []);
 
-    // 上传文件
-    const uploadFiles = useCallback(
-        async (filesToUpload) => {
-            if (!filesToUpload || filesToUpload.length === 0) return;
+    // 开始编辑消息
+    const startEditing = (id, content, existingFiles = []) => {
+        setEditingMessage(id);
+        setEditContent(content);
+        setInputValue(content);
+        console.log("start editing", id, content, existingFiles);
+        // 保留原有的文件（如果有）
+        if (existingFiles && existingFiles.length > 0) {
+            setFiles(existingFiles);
+        }
 
-            setIsUploading(true);
-            try {
-                // 调用上传API
-                const uploadedFiles = await uploadFilesHandler(filesToUpload);
+        // 聚焦到输入框
+        setTimeout(() => {
+            document.querySelector(`.${styles.inputContainer} input`)?.focus();
+        }, 0);
+    };
 
-                // 更新文件状态（这里可以添加成功状态标记）
-                console.log("文件上传成功:", uploadedFiles);
-
-                // 如果需要，可以显示上传成功提示
-            } catch (error) {
-                console.error("上传失败:", error);
-                // 处理上传失败情况
-            } finally {
-                setIsUploading(false);
-            }
-        },
-        [uploadFilesHandler]
-    );
+    // 取消编辑
+    const cancelEditing = () => {
+        setEditingMessage(null);
+        setEditContent("");
+        setInputValue("");
+        setFiles([]); // 清空文件列表
+    };
 
     // 建议问题列表
     const suggestions = [
@@ -294,137 +402,222 @@ const ChatWindow = ({
 
     return (
         <div className={styles.chatWindow}>
-            {/* 标题栏 - 只在有对话时显示 */}
-            {conversation && (
-                <div className={styles.header}>
-                    <h2>{conversation.title}</h2>
-                </div>
-            )}
+            {/* 使用独立的PdfViewer组件 */}
 
-            <div className={styles.messagesContainer}>
-                {!conversation ? (
-                    // 初始状态 - 无任何对话
-                    <EmptyState
-                        title="科研成果评价系统"
-                        description="开始一个新的对话或从侧边栏选择已有对话"
-                        suggestions={suggestions}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                        onSendMessage={onSendMessage}
-                        isGenerating={isGenerating}
-                        onSubmit={handleSubmit}
-                        isTransitioning={isTransitioning}
-                        files={files}
-                        handleDrop={handleDrop}
-                        handleDragOver={handleDragOver}
-                        handleDragLeave={handleDragLeave}
-                        isDragging={isDragging}
-                        removeFile={removeFile}
-                        formatFileSize={formatFileSize}
-                        handleFileSelect={handleFileSelect}
-                    />
-                ) : conversation.messages.length === 0 ? (
-                    // 新建对话 - 无消息
-                    <EmptyState
-                        title="科研成果评价系统"
-                        description="你可以问我任何关于科研成果评价的问题"
-                        suggestions={suggestions}
-                        inputValue={inputValue}
-                        setInputValue={setInputValue}
-                        onSendMessage={onSendMessage}
-                        isGenerating={isGenerating}
-                        onSubmit={handleSubmit}
-                        isTransitioning={isTransitioning}
-                        files={files}
-                        handleDrop={handleDrop}
-                        handleDragOver={handleDragOver}
-                        handleDragLeave={handleDragLeave}
-                        isDragging={isDragging}
-                        removeFile={removeFile}
-                        formatFileSize={formatFileSize}
-                        handleFileSelect={handleFileSelect}
-                    />
-                ) : (
-                    // 有消息的对话
-                    <>
-                        {conversation.messages.map((msg) => (
-                            <Message key={msg.id} message={msg} />
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </>
+            <div
+                className={`${styles.mainContent} ${
+                    viewingPdf ? styles.withPdfViewer : ""
+                }`}>
+                {conversation && (
+                    <div className={styles.header}>
+                        <h2>{conversation.title}</h2>
+                    </div>
+                )}
+                <div className={styles.messagesContainer}>
+                    {!conversation ? (
+                        // 初始状态 - 无任何对话
+                        <EmptyState
+                            title="科研成果评价系统"
+                            suggestions={suggestions}
+                            inputValue={inputValue}
+                            setInputValue={setInputValue}
+                            onSendMessage={onSendMessage}
+                            isGenerating={isGenerating}
+                            onSubmit={handleSubmit}
+                            isTransitioning={isTransitioning}
+                            files={files}
+                            handleDrop={handleDrop}
+                            handleDragOver={handleDragOver}
+                            handleDragLeave={handleDragLeave}
+                            isDragging={isDragging}
+                            removeFile={removeFile}
+                            formatFileSize={formatFileSize}
+                            handleFileSelect={handleFileSelect}
+                        />
+                    ) : conversation.messages.length === 0 ? (
+                        // 新建对话 - 无消息
+                        <EmptyState
+                            title="科研成果评价系统"
+                            suggestions={suggestions}
+                            inputValue={inputValue}
+                            setInputValue={setInputValue}
+                            onSendMessage={onSendMessage}
+                            isGenerating={isGenerating}
+                            onSubmit={handleSubmit}
+                            isTransitioning={isTransitioning}
+                            files={files}
+                            handleDrop={handleDrop}
+                            handleDragOver={handleDragOver}
+                            handleDragLeave={handleDragLeave}
+                            isDragging={isDragging}
+                            removeFile={removeFile}
+                            formatFileSize={formatFileSize}
+                            handleFileSelect={handleFileSelect}
+                        />
+                    ) : (
+                        // 有消息的对话
+                        <>
+                            {conversation.messages.map((msg) => (
+                                <div key={msg.id}>
+                                    {/* 在消息上方显示文件 */}
+                                    {msg.files && msg.files.length > 0 && (
+                                        <MessageFileList
+                                            files={msg.files}
+                                            formatFileSize={formatFileSize}
+                                            onViewPdf={handleViewPdf}
+                                        />
+                                    )}
+
+                                    <Message
+                                        message={msg}
+                                        onCopy={() => onCopyMessage(msg.id)}
+                                        onRegenerate={
+                                            msg.sender === "ai"
+                                                ? () => onRegenerate(msg.id)
+                                                : null
+                                        }
+                                        onEdit={
+                                            msg.sender === "user"
+                                                ? () =>
+                                                      startEditing(
+                                                          msg.id,
+                                                          msg.text,
+                                                          msg.files
+                                                      )
+                                                : null
+                                        }
+                                        onFavorite={
+                                            msg.sender === "ai"
+                                                ? () =>
+                                                      onFavoriteMessage(msg.id)
+                                                : null
+                                        }
+                                        onLike={
+                                            msg.sender === "ai"
+                                                ? () => onLikeMessage(msg.id)
+                                                : null
+                                        }
+                                        isEditing={editingMessage === msg.id}
+                                    />
+                                </div>
+                            ))}
+                            <div ref={messagesEndRef} />
+                        </>
+                    )}
+                </div>
+
+                {/* 隐藏的文件输入框 */}
+                <input
+                    type="file"
+                    accept=".pdf,.txt,.docx"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    multiple
+                    style={{ display: "none" }}
+                />
+
+                {/* 有消息时底部的输入框 */}
+                {conversation && conversation.messages.length > 0 && (
+                    <div
+                        className={`${styles.inputArea} ${
+                            isTransitioning
+                                ? styles.transitioningBottomInput
+                                : ""
+                        }`}>
+                        <FileList
+                            files={files}
+                            removeFile={removeFile}
+                            formatFileSize={formatFileSize}
+                            compact={true}
+                        />
+
+                        {isGenerating && (
+                            <div className={styles.generatingIndicator}>
+                                <Loader size="small" />
+                                <Button
+                                    variant="danger-outline"
+                                    size="small"
+                                    onClick={onInterrupt}>
+                                    停止生成
+                                </Button>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit}>
+                            <div className={styles.inputContainer}>
+                                <input
+                                    type="text"
+                                    value={inputValue}
+                                    onChange={(e) =>
+                                        setInputValue(e.target.value)
+                                    }
+                                    placeholder={
+                                        editingMessage
+                                            ? "编辑消息..."
+                                            : "输入消息..."
+                                    }
+                                    disabled={isGenerating}
+                                    ref={editInputRef}
+                                />
+                                {editingMessage && (
+                                    <Button
+                                        className={styles.inputButton}
+                                        variant="danger-outline"
+                                        shape="circle"
+                                        size="small"
+                                        onClick={cancelEditing}>
+                                        <Icon name="CloseOutlined" size={20} />
+                                    </Button>
+                                )}
+                                <Button
+                                    className={styles.inputButton}
+                                    variant="secondary"
+                                    shape="circle"
+                                    size="small"
+                                    onClick={handleFileSelect}>
+                                    <Icon name="PlusOutlined" size={20} />
+                                </Button>
+                                <Button
+                                    className={styles.inputButton}
+                                    type="submit"
+                                    shape="circle"
+                                    size="small"
+                                    disabled={
+                                        !inputValue.trim() || isGenerating
+                                    }>
+                                    <Icon
+                                        name={
+                                            editingMessage
+                                                ? "CheckOutlined"
+                                                : "ArrowUpOutlined"
+                                        }
+                                        size={20}
+                                    />
+                                </Button>
+                            </div>
+                        </form>
+
+                        {editingMessage && (
+                            <div className={styles.editingHint}>
+                                正在编辑消息...
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* 上传状态指示器 */}
+                {isUploading && (
+                    <div className={styles.uploadIndicator}>
+                        <Loader size="small" />
+                        <span>上传文件中...</span>
+                    </div>
                 )}
             </div>
-
-            {/* 隐藏的文件输入框 */}
-            <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                multiple
-                style={{ display: "none" }}
+            <PdfViewer
+                file={viewingPdf}
+                onClose={handleClosePdf}
+                isOpen={!!viewingPdf}
             />
-
-            {/* 有消息时底部的输入框 */}
-            {conversation && conversation.messages.length > 0 && (
-                <div
-                    className={`${styles.inputArea} ${
-                        isTransitioning ? styles.transitioningBottomInput : ""
-                    }`}>
-                    <FileList
-                        files={files}
-                        removeFile={removeFile}
-                        formatFileSize={formatFileSize}
-                    />
-
-                    {isGenerating && (
-                        <div className={styles.generatingIndicator}>
-                            <Loader size="small" />
-                            <Button
-                                variant="danger-outline"
-                                size="small"
-                                onClick={onInterrupt}>
-                                停止生成
-                            </Button>
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit}>
-                        <div className={styles.inputContainer}>
-                            <input
-                                type="text"
-                                value={inputValue}
-                                onChange={(e) => setInputValue(e.target.value)}
-                                placeholder="输入消息..."
-                                disabled={isGenerating}
-                            />
-                            <Button
-                                className={styles.inputButton}
-                                variant="secondary"
-                                shape="circle"
-                                size="small"
-                                onClick={handleFileSelect}>
-                                <Icon name="PlusOutlined" size={20} />
-                            </Button>
-                            <Button
-                                className={styles.inputButton}
-                                type="submit"
-                                shape="circle"
-                                size="small"
-                                disabled={!inputValue.trim() || isGenerating}>
-                                <Icon name="ArrowUpOutlined" size={20} />
-                            </Button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            {/* 上传状态指示器 */}
-            {isUploading && (
-                <div className={styles.uploadIndicator}>
-                    <Loader size="small" />
-                    <span>上传文件中...</span>
-                </div>
-            )}
         </div>
     );
 };

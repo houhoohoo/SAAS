@@ -1,0 +1,100 @@
+/* PdfViewer.module.css */
+.pdfViewer {
+    /* position: fixed; */
+    /* right: 0;
+    top: 0; */
+    width: 50%;
+    height: 100vh;
+    background: white;
+    border-left: 1px solid var(--border-color);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
+}
+
+.pdfViewerHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: var(--bg-color-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.pdfViewerTitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+}
+
+.fileName {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+.closeButton {
+    min-width: auto;
+    padding: 4px;
+}
+
+.pdfViewerContent {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+    /* 允许flex item收缩 */
+}
+
+.pdfIframe {
+    border: none;
+    width: 100%;
+    height: 100%;
+}
+
+.pdfPlaceholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-color-secondary);
+    text-align: center;
+    gap: 12px;
+}
+
+.pdfViewerFooter {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px;
+    background: var(--bg-color-secondary);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .pdfViewer {
+        width: 100%;
+        z-index: 2000;
+    }
+
+    .fileName {
+        max-width: 200px;
+    }
+}

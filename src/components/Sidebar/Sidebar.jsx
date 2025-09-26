@@ -90,7 +90,7 @@ const Sidebar = ({
                     <div className={styles.actions}>
                         <Button
                             variant="primary"
-                            size="large"
+                            size="medium"
                             fullWidth
                             onClick={onNewConversation}>
                             <Icon name="PlusCircleOutlined" size={16} />{" "}
@@ -98,11 +98,11 @@ const Sidebar = ({
                         </Button>
 
                         {/* <div className={styles.actionGroup}> */}
-                        <Button variant="secondary" size="large" fullWidth>
+                        <Button variant="secondary" size="medium" fullWidth>
                             <Icon name="FolderAddOutlined" size={16} />{" "}
                             新建文件夹
                         </Button>
-                        <Button variant="secondary" size="large" fullWidth>
+                        <Button variant="secondary" size="medium" fullWidth>
                             <Icon name="StarOutlined" size={16} /> 我的收藏
                         </Button>
                         {/* </div> */}
