@@ -1,7 +1,10 @@
-/* eslint-disable no-undef */
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useEffect } from "react";
+
 import {
+    initWebSocket,
     getConversations,
     createConversation,
     deleteConversation,
@@ -10,7 +13,10 @@ import {
     interruptConversation,
     regenerateMessage,
     editMessage,
-} from "../api/mockApi";
+    subscribeToEvents,
+    disconnectWebSocket,
+    MESSAGE_TYPES,
+} from "../api/websocketApi";
 
 const ChatContext = createContext();
 
@@ -23,9 +29,120 @@ export const ChatProvider = ({ children }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [error, setError] = useState(null);
+    const [uploadedFilesCache, setUploadedFilesCache] = useState(new Map());
+    const [isConnected, setIsConnected] = useState(false); //   WebSocket连接状态
+    // 初始化WebSocket连接
+    useEffect(() => {
+        const initializeConnection = async () => {
+            try {
+                const connected = await initWebSocket();
+                setIsConnected(connected);
 
+                if (connected) {
+                    // 订阅服务端推送事件
+                    const unsubscribe = subscribeToEvents({
+                        onConversationCreated: (conversation) => {
+                            setConversations((prev) => [conversation, ...prev]);
+                        },
+
+                        onConversationDeleted: ({ conversationId }) => {
+                            setConversations((prev) =>
+                                prev.filter(
+                                    (conv) => conv.id !== conversationId
+                                )
+                            );
+                            if (activeConversation === conversationId) {
+                                setActiveConversation(
+                                    conversations[0]?.id || null
+                                );
+                            }
+                        },
+                        onMessageSent: ({ conversationId, messages }) => {
+                            console.log(
+                                "收到消息发送事件:",
+                                conversationId,
+                                messages
+                            );
+
+                            setConversations((prev) =>
+                                prev.map((conv) => {
+                                    if (conv.id === conversationId) {
+                                        // 移除临时消息
+                                        const filteredMessages =
+                                            conv.messages.filter(
+                                                (msg) =>
+                                                    !msg.id.startsWith("temp")
+                                            );
+
+                                        // 添加新消息（主要是AI消息）
+                                        return {
+                                            ...conv,
+                                            messages: [
+                                                ...filteredMessages,
+                                                ...messages,
+                                            ],
+                                        };
+                                    }
+                                    return conv;
+                                })
+                            );
+
+                            setIsGenerating(false);
+                        },
+
+                        onMessageUpdated: ({
+                            conversationId,
+                            messageId,
+                            newMessage,
+                        }) => {
+                            setConversations((prev) =>
+                                prev.map((conv) => {
+                                    if (conv.id === conversationId) {
+                                        return {
+                                            ...conv,
+                                            messages: conv.messages.map((msg) =>
+                                                msg.id === messageId
+                                                    ? newMessage
+                                                    : msg
+                                            ),
+                                        };
+                                    }
+                                    return conv;
+                                })
+                            );
+                        },
+
+                        onError: (error) => {
+                            setError(error.message || "发生错误");
+                            console.error("服务端错误:", error);
+                        },
+                    });
+
+                    // 加载初始对话列表
+                    await loadConversations();
+
+                    return unsubscribe;
+                }
+            } catch (error) {
+                console.error("初始化失败:", error);
+                setError("连接服务器失败");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        const unsubscribePromise = initializeConnection();
+
+        return () => {
+            unsubscribePromise.then((unsubscribe) => {
+                if (unsubscribe) unsubscribe();
+                disconnectWebSocket();
+            });
+        };
+    }, []);
     // 加载对话列表
     const loadConversations = async () => {
+        if (!isConnected) return;
         setIsLoading(true);
         try {
             const data = await getConversations();
@@ -42,7 +159,6 @@ export const ChatProvider = ({ children }) => {
     const createNewConversation = async () => {
         try {
             const newConv = await createConversation();
-            setConversations((prev) => [newConv, ...prev]);
             setActiveConversation(newConv.id);
             return newConv;
         } catch (err) {
@@ -56,7 +172,6 @@ export const ChatProvider = ({ children }) => {
     const deleteConv = async (id) => {
         try {
             await deleteConversation(id);
-            setConversations((prev) => prev.filter((conv) => conv.id !== id));
             if (activeConversation === id) {
                 setActiveConversation(conversations[0]?.id || null);
             }
@@ -72,14 +187,90 @@ export const ChatProvider = ({ children }) => {
 
         setIsUploading(true);
         try {
-            const response = await uploadFiles(files);
+            // 确保 files 包含必要的文件信息
+            const validFiles = files.map((file) => ({
+                name: file.name || "unknown",
+                size: file.size || 0,
+                type: file.type || "application/octet-stream",
+                lastModified: file.lastModified || Date.now(),
+                // 其他必要属性...
+            }));
+
+            console.log("上传文件信息:", validFiles); // 调试日志
+
+            const response = await uploadFiles(validFiles);
             return response.files || [];
         } catch (err) {
             setError("上传文件失败");
             console.error("上传文件失败:", err);
-            throw err; // 抛出错误让调用方处理
+            throw err;
         } finally {
             setIsUploading(false);
+        }
+    };
+    // 发送消息
+    const sendNewMessage = async (message, uploadedFiles = []) => {
+        let currentConvId = activeConversation;
+        let isNewConversation = false;
+
+        if (!currentConvId) {
+            const newConv = await createNewConversation();
+            if (!newConv) return;
+            currentConvId = newConv.id;
+            isNewConversation = true;
+        }
+
+        setIsGenerating(true);
+
+        try {
+            // 添加临时用户消息（包含文件信息）
+            setConversations((prev) =>
+                prev.map((conv) => {
+                    if (conv.id === currentConvId) {
+                        const newMessage = {
+                            id: `temp-${Date.now()}`,
+                            text: message,
+                            sender: "user",
+                            timestamp: new Date().toISOString(),
+                            files:
+                                uploadedFiles.length > 0
+                                    ? uploadedFiles
+                                    : undefined,
+                            isTemp: true,
+                        };
+
+                        return {
+                            ...conv,
+                            messages: isNewConversation
+                                ? [newMessage]
+                                : [...conv.messages, newMessage],
+                        };
+                    }
+                    return conv;
+                })
+            );
+
+            // 发送消息到服务器（包含文件ID引用）
+            await sendMessage(currentConvId, message, uploadedFiles);
+        } catch (err) {
+            setError("发送消息失败");
+            console.error("发送消息失败:", err);
+
+            // 移除临时消息
+            setConversations((prev) =>
+                prev.map((conv) => {
+                    if (conv.id === currentConvId) {
+                        return {
+                            ...conv,
+                            messages: conv.messages.filter(
+                                (msg) => !msg.isTemp
+                            ),
+                        };
+                    }
+                    return conv;
+                })
+            );
+            setIsGenerating(false);
         }
     };
 
@@ -91,27 +282,7 @@ export const ChatProvider = ({ children }) => {
 
         setIsGenerating(true);
         try {
-            const response = await regenerateMessage(
-                messageId,
-                activeConversation
-            );
-
-            // 更新对话中的消息
-            setConversations((prev) => {
-                return prev.map((conv) => {
-                    if (conv.id === activeConversation) {
-                        return {
-                            ...conv,
-                            messages: conv.messages.map((msg) =>
-                                msg.id === messageId ? response.newMessage : msg
-                            ),
-                        };
-                    }
-                    return conv;
-                });
-            });
-
-            return response;
+            regenerateMessage(messageId, activeConversation);
         } catch (err) {
             setError("重新生成消息失败");
             console.error("重新生成消息失败:", err);
@@ -121,7 +292,6 @@ export const ChatProvider = ({ children }) => {
         }
     };
 
-    // 编辑消息
     // 编辑消息
     const editMessageHandler = async (messageId, newContent, files = []) => {
         if (!activeConversation) {
@@ -138,176 +308,11 @@ export const ChatProvider = ({ children }) => {
                 uploadedFiles = await uploadFilesHandler(files);
             }
 
-            // 调用编辑API
-            const response = await editMessage(
-                messageId,
-                newContent,
-                activeConversation
-            );
-
-            // 更新对话状态
-            setConversations((prev) => {
-                return prev.map((conv) => {
-                    if (conv.id === activeConversation) {
-                        // 找到编辑的消息位置
-                        const messageIndex = conv.messages.findIndex(
-                            (msg) => msg.id === messageId
-                        );
-
-                        if (messageIndex === -1) return conv;
-
-                        // 创建更新后的消息数组
-                        const updatedMessages = [...conv.messages];
-
-                        // 更新用户消息
-                        updatedMessages[messageIndex] = {
-                            ...response.editedMessage,
-                            files:
-                                uploadedFiles.length > 0
-                                    ? uploadedFiles
-                                    : updatedMessages[messageIndex].files,
-                        };
-
-                        // 移除原AI回复（如果有），添加新AI回复
-                        const nextIndex = messageIndex + 1;
-                        let finalMessages = [];
-
-                        // 保留编辑消息之前的所有消息
-                        finalMessages = updatedMessages.slice(0, nextIndex);
-
-                        // 添加新的AI回复
-                        finalMessages.push(response.newResponse);
-
-                        // 保留后续的用户消息（如果有）
-                        let i = nextIndex;
-                        while (i < updatedMessages.length) {
-                            if (updatedMessages[i].sender === "user") {
-                                finalMessages.push(updatedMessages[i]);
-                                // 找到下一个用户消息后的AI消息（如果有）
-                                let j = i + 1;
-                                while (
-                                    j < updatedMessages.length &&
-                                    updatedMessages[j].sender === "ai"
-                                ) {
-                                    finalMessages.push(updatedMessages[j]);
-                                    j++;
-                                }
-                                i = j;
-                            } else {
-                                i++;
-                            }
-                        }
-
-                        return {
-                            ...conv,
-                            messages: finalMessages,
-                        };
-                    }
-                    return conv;
-                });
-            });
-
-            return response;
+            await editMessage(messageId, newContent, activeConversation);
         } catch (err) {
             setError("编辑消息失败");
             console.error("编辑消息失败:", err);
             throw err;
-        } finally {
-            setIsGenerating(false);
-        }
-    };
-    // 发送消息（支持文件上传）
-    const sendNewMessage = async (message, files = []) => {
-        // 如果没有活动对话，先创建新对话
-        let currentConvId = activeConversation;
-        let isNewConversation = false;
-
-        if (!currentConvId) {
-            const newConv = await createNewConversation();
-            if (!newConv) return; // 创建失败
-            currentConvId = newConv.id;
-            isNewConversation = true;
-        }
-
-        setIsGenerating(true);
-        let uploadedFiles = [];
-
-        try {
-            // 如果有文件，先上传文件
-            if (files.length > 0) {
-                uploadedFiles = await uploadFilesHandler(files);
-            }
-
-            // 先在前端添加用户消息（包含文件信息）
-            setConversations((prev) => {
-                return prev.map((conv) => {
-                    if (conv.id === currentConvId) {
-                        const newMessage = {
-                            id: `temp-${Date.now()}`,
-                            text: message,
-                            sender: "user",
-                            timestamp: new Date().toISOString(),
-                            files:
-                                uploadedFiles.length > 0
-                                    ? uploadedFiles
-                                    : undefined,
-                        };
-
-                        return {
-                            ...conv,
-                            messages: isNewConversation
-                                ? [newMessage]
-                                : [...conv.messages, newMessage],
-                        };
-                    }
-                    return conv;
-                });
-            });
-
-            // 发送API请求（传递文件信息）
-            const response = await sendMessage(
-                currentConvId,
-                message,
-                uploadedFiles
-            );
-
-            // 更新对话状态，移除临时消息，添加API返回的正式消息
-            setConversations((prev) => {
-                return prev.map((conv) => {
-                    if (conv.id === currentConvId) {
-                        return {
-                            ...conv,
-                            messages: [
-                                // 保留非临时消息（防止重复）
-                                ...conv.messages.filter(
-                                    (msg) => !msg.id.startsWith("temp")
-                                ),
-                                // 添加API返回的消息
-                                ...response.messages,
-                            ],
-                        };
-                    }
-                    return conv;
-                });
-            });
-        } catch (err) {
-            setError("发送消息失败");
-            console.error("发送消息失败:", err);
-
-            // 发送失败时移除临时消息
-            setConversations((prev) => {
-                return prev.map((conv) => {
-                    if (conv.id === currentConvId) {
-                        return {
-                            ...conv,
-                            messages: conv.messages.filter(
-                                (msg) => !msg.id.startsWith("temp")
-                            ),
-                        };
-                    }
-                    return conv;
-                });
-            });
         } finally {
             setIsGenerating(false);
         }
@@ -324,10 +329,6 @@ export const ChatProvider = ({ children }) => {
         }
     };
 
-    useEffect(() => {
-        loadConversations();
-    }, []);
-
     const value = {
         conversations,
         activeConversation,
@@ -335,6 +336,7 @@ export const ChatProvider = ({ children }) => {
         isGenerating,
         isUploading, // 新增上传状态
         error,
+        isConnected,
         setActiveConversation,
         createNewConversation,
         deleteConversation: deleteConv,

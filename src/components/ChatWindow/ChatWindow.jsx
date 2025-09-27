@@ -6,7 +6,6 @@ import Icon from "../common/Icon";
 import styles from "./ChatWindow.module.css";
 import PdfViewer from "./PdfViewer";
 
-// 修改后的 MessageFileList 组件（在ChatWindow.jsx中）
 const MessageFileList = ({ files, formatFileSize, onViewPdf }) => {
     if (!files || files.length === 0) return null;
 
@@ -24,7 +23,6 @@ const MessageFileList = ({ files, formatFileSize, onViewPdf }) => {
     );
 };
 
-// 新增独立的MessageFileItem组件
 const MessageFileItem = ({ file, formatFileSize, onViewPdf }) => {
     const [isHovered, setIsHovered] = useState(false);
 
@@ -211,11 +209,12 @@ const ChatWindow = ({
     onSendMessage,
     onInterrupt,
     uploadFilesHandler,
-    onRegenerate, // 新增重新生成回调
-    onEditMessage, // 新增编辑消息回调
-    onCopyMessage, // 新增复制消息回调
-    onFavoriteMessage, // 新增收藏消息回调
-    onLikeMessage, // 新增点赞消息回调
+    onRegenerate,
+    onEditMessage,
+    onCopyMessage,
+    onFavoriteMessage,
+    onLikeMessage,
+    isConnected,
 }) => {
     const [inputValue, setInputValue] = useState("");
     const [editingMessage, setEditingMessage] = useState(null); // 正在编辑的消息ID
@@ -231,6 +230,7 @@ const ChatWindow = ({
     const prevMessagesLength = useRef(0);
     const editInputRef = useRef(null);
     const [viewingPdf, setViewingPdf] = useState(null);
+    const [uploadedFilesCache, setUploadedFilesCache] = useState(new Map());
 
     // 查看PDF文件
     const handleViewPdf = (file) => {
@@ -262,38 +262,39 @@ const ChatWindow = ({
         setEditingMessage(null);
     }, [conversation, clearTransitionTimers]);
 
+    // 修改提交处理 - 只发送文件ID
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!inputValue.trim() || isGenerating) return;
 
-        // 如果有文件，先上传文件
-        let filesToSend = [];
-        if (files.length > 0) {
-            setIsUploading(true);
-            try {
-                filesToSend = await uploadFilesHandler(files);
-            } catch (error) {
-                console.error("上传失败:", error);
-                setIsUploading(false);
-                return;
+        // 从缓存中获取完整的文件信息
+        const filesToSend = Array.from(uploadedFilesCache.values()).filter(
+            (cachedFile) =>
+                files.some((localFile) => localFile.name === cachedFile.name)
+        );
+
+        try {
+            // 如果有正在编辑的消息，则发送编辑后的内容
+            if (editingMessage) {
+                await onEditMessage(editingMessage, inputValue, filesToSend);
+                setEditingMessage(null);
+                setEditContent("");
+            } else {
+                // 发送消息（包含已上传的文件信息）
+                onSendMessage(inputValue, filesToSend);
             }
-            setIsUploading(false);
-        }
 
-        // 如果有正在编辑的消息，则发送编辑后的内容
-        if (editingMessage) {
-            console.log("编辑消息:", editingMessage, inputValue, filesToSend);
-            await onEditMessage(editingMessage, inputValue, filesToSend);
-            setEditingMessage(null);
-            setEditContent("");
-        } else {
-            // 否则发送新消息
-            onSendMessage(inputValue, filesToSend);
+            // 发送成功后清理相关文件缓存和本地列表
+            filesToSend.forEach((file) => {
+                uploadedFilesCache.delete(file.id);
+            });
+            setFiles([]);
+            setInputValue("");
+        } catch (err) {
+            console.error("发送消息失败:", err);
         }
-
-        setFiles([]);
-        setInputValue("");
     };
+
     // 滚动到底部
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -330,20 +331,71 @@ const ChatWindow = ({
         setFiles((prev) => prev.filter((_, i) => i !== index));
     }, []);
 
+    // 立即上传文件（用户选择文件后调用）
+    const handleFileUpload = async (newFiles) => {
+        if (!newFiles || newFiles.length === 0) return [];
+
+        setIsUploading(true);
+        try {
+            const uploadedFiles = await uploadFilesHandler(newFiles);
+
+            // 缓存已上传的文件
+            const newCache = new Map(uploadedFilesCache);
+            uploadedFiles.forEach((file) => {
+                newCache.set(file.id, file);
+            });
+            setUploadedFilesCache(newCache);
+
+            return uploadedFiles;
+        } catch (error) {
+            console.error("上传失败:", error);
+            throw error;
+        } finally {
+            setIsUploading(false);
+        }
+    };
     // 处理文件选择
     const handleFileSelect = useCallback(() => {
         fileInputRef.current.click();
     }, []);
 
-    // 处理文件输入变化
-    const handleFileChange = useCallback((e) => {
-        if (e.target.files.length > 0) {
-            const newFiles = Array.from(e.target.files);
-            setFiles((prev) => [...prev, ...newFiles]);
-            // uploadFiles(newFiles);
-        }
-        e.target.value = "";
-    }, []);
+    // 修改文件选择处理
+    const handleFileChange = useCallback(
+        async (e) => {
+            if (e.target.files.length > 0) {
+                const newFiles = Array.from(e.target.files);
+
+                try {
+                    // 构造完整的文件信息对象
+                    const filesWithInfo = newFiles.map((file) => ({
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        lastModified: file.lastModified,
+                        // 如果需要，可以添加其他必要属性
+                    }));
+
+                    // 立即上传文件（传递完整的文件信息）
+                    const uploadedFiles = await handleFileUpload(filesWithInfo);
+
+                    // 上传成功后添加到本地文件列表
+                    setFiles((prev) => [
+                        ...prev,
+                        ...uploadedFiles.map((file) => ({
+                            id: file.id, // 使用服务器返回的文件ID
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                        })),
+                    ]);
+                } catch (error) {
+                    console.error("文件上传失败:", error);
+                }
+            }
+            e.target.value = "";
+        },
+        [uploadFilesHandler]
+    );
 
     // 处理拖拽悬停
     const handleDragOver = useCallback((e) => {
@@ -356,33 +408,61 @@ const ChatWindow = ({
         setIsDragging(false);
     }, []);
 
-    // 处理文件拖放
-    const handleDrop = useCallback((e) => {
-        e.preventDefault();
-        setIsDragging(false);
+    // 修改拖放处理
+    const handleDrop = useCallback(
+        async (e) => {
+            e.preventDefault();
+            setIsDragging(false);
 
-        if (e.dataTransfer.files.length > 0) {
-            const newFiles = Array.from(e.dataTransfer.files);
-            setFiles((prev) => [...prev, ...newFiles]);
-            // uploadFiles(newFiles);
-        }
-    }, []);
+            if (e.dataTransfer.files.length > 0) {
+                const newFiles = Array.from(e.dataTransfer.files);
 
-    // 开始编辑消息
+                try {
+                    // 构造完整的文件信息对象
+                    const filesWithInfo = newFiles.map((file) => ({
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        lastModified: file.lastModified,
+                    }));
+
+                    // 立即上传文件
+                    const uploadedFiles = await handleFileUpload(filesWithInfo);
+                    setFiles((prev) => [
+                        ...prev,
+                        ...uploadedFiles.map((file) => ({
+                            id: file.id,
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                        })),
+                    ]);
+                } catch (error) {
+                    console.error("文件上传失败:", error);
+                }
+            }
+        },
+        [uploadFilesHandler]
+    );
+
+    // 修改开始编辑逻辑 - 重新关联已上传的文件
     const startEditing = (id, content, existingFiles = []) => {
         setEditingMessage(id);
         setEditContent(content);
         setInputValue(content);
-        console.log("start editing", id, content, existingFiles);
-        // 保留原有的文件（如果有）
-        if (existingFiles && existingFiles.length > 0) {
-            setFiles(existingFiles);
-        }
 
-        // 聚焦到输入框
-        setTimeout(() => {
-            document.querySelector(`.${styles.inputContainer} input`)?.focus();
-        }, 0);
+        // 如果原消息有文件，需要重新关联到缓存
+        if (existingFiles && existingFiles.length > 0) {
+            // 查找缓存中对应的文件
+            const cachedFiles = existingFiles.map((file) => {
+                const cached = Array.from(uploadedFilesCache.values()).find(
+                    (cachedFile) => cachedFile.name === file.name
+                );
+                return cached || file;
+            });
+
+            setFiles(cachedFiles);
+        }
     };
 
     // 取消编辑
@@ -403,7 +483,16 @@ const ChatWindow = ({
     return (
         <div className={styles.chatWindow}>
             {/* 使用独立的PdfViewer组件 */}
-
+            <div
+                className={`${styles.connectionStatus} ${
+                    isConnected ? styles.connected : styles.disconnected
+                }`}>
+                <Icon
+                    name={isConnected ? "WifiOutlined" : "DisconnectOutlined"}
+                    size={12}
+                />
+                <span>{isConnected ? "已连接" : "连接断开"}</span>
+            </div>
             <div
                 className={`${styles.mainContent} ${
                     viewingPdf ? styles.withPdfViewer : ""

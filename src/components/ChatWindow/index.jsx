@@ -18,6 +18,7 @@ const ChatWindowContainer = () => {
         onCopyMessage,
         onFavoriteMessage,
         onLikeMessage,
+        isConnected,
     } = useChat();
 
     const conversation = conversations.find((c) => c.id === activeConversation);
@@ -36,6 +37,7 @@ const ChatWindowContainer = () => {
                 onCopyMessage={onCopyMessage}
                 onFavoriteMessage={onFavoriteMessage}
                 onLikeMessage={onLikeMessage}
+                isConnected={isConnected}
             />
             {showFileUpload && (
                 <FileUpload onClose={() => setShowFileUpload(false)} />
