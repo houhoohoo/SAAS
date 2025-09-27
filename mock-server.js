@@ -99,13 +99,6 @@ wss.on("connection", (ws) => {
 
                 case MESSAGE_TYPES.SEND_MESSAGE:
                     const conv = conversations.find(c => c.id === payload.conversationId);
-                    if (!conv) {
-                        sendResponse(`${MESSAGE_TYPES.SEND_MESSAGE}_response`, {
-                            success: false,
-                            error: "对话不存在"
-                        });
-                        break;
-                    }
                     // 验证文件是否已上传
                     const validFiles = [];
                     if (payload.files && Array.isArray(payload.files)) {
@@ -185,6 +178,7 @@ wss.on("connection", (ws) => {
 
                         return response;
                     }
+
                 case MESSAGE_TYPES.UPLOAD_FILES:
                     try {
                         console.log('收到文件上传请求:', payload.files);
@@ -276,6 +270,7 @@ wss.on("connection", (ws) => {
                         });
                     }
                     break;
+
                 case MESSAGE_TYPES.INTERRUPT_CONVERSATION:
                     sendResponse(`${MESSAGE_TYPES.INTERRUPT_CONVERSATION}_response`, {
                         success: true
@@ -283,118 +278,147 @@ wss.on("connection", (ws) => {
                     break;
 
                 case MESSAGE_TYPES.REGENERATE_MESSAGE:
-                    const convR = conversations.find(c => c.id === payload.conversationId);
-                    if (!convR) {
+                    try {
+                        console.log('收到重新生成消息请求:', payload);
+
+                        const { messageId, conversationId } = payload;
+
+                        // 查找对话
+                        const convR = conversations.find(c => c.id === conversationId);
+
+                        // 查找要重新生成的消息（应该是AI消息）
+                        const originalMsg = convR.messages.find(m => m.id === messageId);
+
+
+                        // 查找对应的用户消息（用于生成新的回复）
+                        const userMsg = convR.messages.find(m =>
+                            m.sender === 'user' &&
+                            convR.messages.indexOf(m) < convR.messages.indexOf(originalMsg)
+                        );
+
+                        // 立即返回成功响应
                         sendResponse(`${MESSAGE_TYPES.REGENERATE_MESSAGE}_response`, {
-                            success: false,
-                            error: "对话不存在"
+                            success: true,
+                            messageId: messageId,
+                            conversationId: conversationId
                         });
-                        break;
-                    }
 
-                    const originalMsg = convR.messages.find(m => m.id === payload.messageId);
-                    if (!originalMsg) {
-                        sendResponse(`${MESSAGE_TYPES.REGENERATE_MESSAGE}_response`, {
-                            success: false,
-                            error: "消息不存在"
-                        });
-                        break;
-                    }
+                        // 模拟AI重新生成过程
+                        setTimeout(() => {
+                            // 生成新的AI消息
+                            const newAiMsg = {
+                                id: `msg-${Date.now()}-ai-regenerated`,
+                                text: generateRegeneratedResponse(userMsg ? userMsg.text : originalMsg.text),
+                                sender: "ai",
+                                timestamp: new Date().toISOString(),
+                                isRegenerated: true,
+                                originalMessageId: messageId
+                            };
 
-                    // 生成新的AI消息
-                    const newAiMsg = {
-                        id: `msg-${Date.now()}-ai-regenerated`,
-                        text: `【重新生成】这是对"${originalMsg.text.substring(0, 20)}..."的新回复。`,
-                        sender: "ai",
-                        timestamp: new Date().toISOString()
-                    };
+                            // 找到原消息的位置并替换
+                            const msgIndex = convR.messages.findIndex(m => m.id === messageId);
+                            if (msgIndex !== -1) {
+                                convR.messages[msgIndex] = newAiMsg;
+                            }
 
-                    // 替换原AI消息
-                    const msgIndex = convR.messages.findIndex(m => m.id === payload.messageId);
-                    if (msgIndex !== -1) {
-                        convR.messages[msgIndex] = newAiMsg;
-                    }
+                            // 推送消息更新事件
+                            ws.send(JSON.stringify({
+                                type: MESSAGE_TYPES.MESSAGE_UPDATED,
+                                payload: {
+                                    conversationId: conversationId,
+                                    messageId: messageId,
+                                    newMessage: newAiMsg
+                                }
+                            }));
 
-                    sendResponse(`${MESSAGE_TYPES.REGENERATE_MESSAGE}_response`, {
-                        success: true,
-                        newMessage: newAiMsg
-                    });
+                        }, 800);
 
-                    // 推送消息更新事件
-                    ws.send(JSON.stringify({
-                        type: MESSAGE_TYPES.MESSAGE_UPDATED,
-                        payload: {
-                            conversationId: payload.conversationId,
-                            messageId: payload.messageId,
-                            newMessage: newAiMsg
+                        // 重新生成回复的生成函数
+                        function generateRegeneratedResponse(originalText) {
+                            return `【重新生成】基于您的问题"${originalText.substring(0, 30)}..."，这是重新生成的回复。我会用不同的方式来解答您的问题，提供更全面的分析。`;
                         }
-                    }));
+
+                    } catch (error) {
+                        console.error('重新生成消息处理错误:', error);
+                        sendResponse(`${MESSAGE_TYPES.REGENERATE_MESSAGE}_response`, {
+                            success: false,
+                            error: "重新生成消息失败: " + error.message
+                        });
+                    }
                     break;
 
                 case MESSAGE_TYPES.EDIT_MESSAGE:
-                    const convE = conversations.find(c => c.id === payload.conversationId);
-                    if (!convE) {
+                    try {
+                        console.log('收到编辑消息请求:', payload);
+
+                        const { messageId, newContent, conversationId } = payload;
+
+                        // 查找对话
+                        const convE = conversations.find(c => c.id === conversationId);
+
+                        // 查找要编辑的消息（应该是用户消息）的索引
+                        const msgIndex = convE.messages.findIndex(m => m.id === messageId);
+
+                        const newUserMsg = {
+                            id: messageId, // 保持ID不变以便前端识别替换
+                            text: newContent,
+                            sender: "user",
+                            timestamp: new Date().toISOString(),
+                        };
+
+                        convE.messages[msgIndex] = newUserMsg;
+                        convE.messages = convE.messages.slice(0, msgIndex + 1); // 只保留到编辑后的用户消息
+
                         sendResponse(`${MESSAGE_TYPES.EDIT_MESSAGE}_response`, {
-                            success: false,
-                            error: "对话不存在"
+                            success: true,
+                            messageId: messageId,
+                            conversationId: conversationId,
+                            editedMessage: newUserMsg // 返回新的用户消息，表示已替换
                         });
-                        break;
-                    }
 
-                    const msgToEdit = convE.messages.find(m => m.id === payload.messageId);
-                    if (!msgToEdit) {
-                        sendResponse(`${MESSAGE_TYPES.EDIT_MESSAGE}_response`, {
-                            success: false,
-                            error: "消息不存在"
-                        });
-                        break;
-                    }
+                        setTimeout(() => {
+                            // 生成新的AI回复
+                            const newAiResponse = {
+                                id: `msg-${Date.now()}-ai-response`,
+                                text: generateEditResponse(newContent),
+                                sender: "ai",
+                                timestamp: new Date().toISOString(),
+                                // inResponseTo: messageId // 可以保留关联
+                            };
 
-                    if (msgToEdit.sender !== 'user') {
-                        sendResponse(`${MESSAGE_TYPES.EDIT_MESSAGE}_response`, {
-                            success: false,
-                            error: "只能编辑用户消息"
-                        });
-                        break;
-                    }
+                            convE.messages.push(newAiResponse);
 
-                    // 更新用户消息
-                    msgToEdit.text = payload.newContent;
-                    msgToEdit.editedAt = new Date().toISOString();
-                    msgToEdit.isEdited = true;
+                            ws.send(JSON.stringify({
+                                type: MESSAGE_TYPES.MESSAGE_SENT,
+                                payload: {
+                                    conversationId: conversationId,
+                                    messages: [newAiResponse]
+                                }
+                            }));
 
-                    // 生成新的AI回复
-                    const newAiResponse = {
-                        id: `msg-${Date.now()}-ai-response`,
-                        text: `【更新回复】针对您编辑后的消息"${payload.newContent.substring(0, 30)}..."，这是我的新回复。`,
-                        sender: "ai",
-                        timestamp: new Date().toISOString(),
-                        isResponseToEdit: true
-                    };
+                            ws.send(JSON.stringify({
+                                type: MESSAGE_TYPES.MESSAGE_UPDATED,
+                                payload: {
+                                    conversationId: conversationId,
+                                    messageId: messageId,
+                                    newMessage: newUserMsg
+                                }
+                            }));
 
-                    // 移除原AI回复，添加新回复
-                    const userMsgIndex = convE.messages.findIndex(m => m.id === payload.messageId);
-                    const messagesAfterEdit = convE.messages.slice(0, userMsgIndex + 1);
+                        }, 1000);
 
-                    // 添加新AI回复
-                    convE.messages = [...messagesAfterEdit, newAiResponse];
-
-                    sendResponse(`${MESSAGE_TYPES.EDIT_MESSAGE}_response`, {
-                        success: true,
-                        editedMessage: msgToEdit,
-                        newResponse: newAiResponse
-                    });
-
-                    // 推送消息更新事件
-                    ws.send(JSON.stringify({
-                        type: MESSAGE_TYPES.MESSAGE_SENT,
-                        payload: {
-                            conversationId: payload.conversationId,
-                            messages: [newAiResponse],
+                        function generateEditResponse(editedContent) {
+                            return `【更新回复】针对您编辑后的消息"${editedContent.substring(0, 40)}..."，我重新进行了分析。这是基于新内容生成的回复，希望能更好地解答您的问题。`;
                         }
-                    }));
-                    break;
 
+                    } catch (error) {
+                        console.error('编辑消息处理错误:', error);
+                        sendResponse(`${MESSAGE_TYPES.EDIT_MESSAGE}_response`, {
+                            success: false,
+                            error: "编辑消息失败: " + error.message
+                        });
+                    }
+                    break;
                 default:
                     sendResponse(`${MESSAGE_TYPES.ERROR_OCCURRED}`, {
                         message: "未知的消息类型: " + type
