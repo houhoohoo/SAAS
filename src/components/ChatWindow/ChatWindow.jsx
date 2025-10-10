@@ -3,6 +3,8 @@ import Message from "./Message";
 import Button from "../common/Button";
 import Loader from "../common/Loader";
 import Icon from "../common/Icon";
+import { InterruptModal } from "../common/InterruptModal";
+import MultiFileProgress from "./MultiFileProgress";
 import styles from "./ChatWindow.module.css";
 import PdfViewer from "./PdfViewer";
 
@@ -121,6 +123,9 @@ const EmptyState = ({
     removeFile,
     formatFileSize,
     handleFileSelect,
+    userInterests,
+    onToggleInterest,
+    availableInterests = [],
 }) => {
     return (
         <div
@@ -176,6 +181,49 @@ const EmptyState = ({
                 </div>
             )}
 
+            {userInterests.length > 0 && (
+                <div className={styles.userInterestsWrapper}>
+                    <div className={styles.userInterestsTitle}>关注点</div>
+                    <div className={styles.userInterestsList}>
+                        {userInterests.map((interest) => (
+                            <Button
+                                key={interest}
+                                variant="outline"
+                                size="small"
+                                onClick={() => onToggleInterest(interest)}
+                                className={styles.interestButton}>
+                                {interest}
+                                <Icon name="CloseOutlined" size={12} />
+                            </Button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {availableInterests.length > 0 && (
+                <div className={styles.availableInterestsWrapper}>
+                    <div className={styles.userInterestsTitle}>可选关注点</div>
+                    <div className={styles.userInterestsList}>
+                        {availableInterests.map((interest) => {
+                            const isSelected = userInterests.includes(interest);
+                            return (
+                                <Button
+                                    key={interest}
+                                    variant={isSelected ? "primary" : "outline"}
+                                    size="small"
+                                    onClick={() => onToggleInterest(interest)}
+                                    className={`${styles.interestButton} ${
+                                        isSelected ? styles.interestButtonActive : ""
+                                    }`}>
+                                    {interest}
+                                    {isSelected && <Icon name="CheckOutlined" size={12} />}
+                                </Button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {/* 文件上传区域 */}
             {files.length == 0 && (
                 <div
@@ -206,6 +254,7 @@ const EmptyState = ({
 const ChatWindow = ({
     conversation,
     isGenerating,
+    isDeepResearching,
     onSendMessage,
     onInterrupt,
     uploadFilesHandler,
@@ -215,6 +264,13 @@ const ChatWindow = ({
     onFavoriteMessage,
     onLikeMessage,
     isConnected,
+    userInterests,
+    onToggleInterest,
+    onClearInterests,
+    // 人工审核相关
+    pendingInterrupt,
+    onSubmitFeedback,
+    onCancelInterrupt,
 }) => {
     const [inputValue, setInputValue] = useState("");
     const [editingMessage, setEditingMessage] = useState(null); // 正在编辑的消息ID
@@ -231,6 +287,7 @@ const ChatWindow = ({
     const editInputRef = useRef(null);
     const [viewingPdf, setViewingPdf] = useState(null);
     const [uploadedFilesCache, setUploadedFilesCache] = useState(new Map());
+    const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
     // 查看PDF文件
     const handleViewPdf = (file) => {
@@ -268,10 +325,15 @@ const ChatWindow = ({
         if (!inputValue.trim() || isGenerating) return;
 
         // 从缓存中获取完整的文件信息
-        const filesToSend = Array.from(uploadedFilesCache.values()).filter(
-            (cachedFile) =>
-                files.some((localFile) => localFile.name === cachedFile.name)
-        );
+        const filesToSend = files
+            .map((file) => {
+                if (!file) return null;
+                if (file?.id && uploadedFilesCache.has(file.id)) {
+                    return uploadedFilesCache.get(file.id);
+                }
+                return file;
+            })
+            .filter(Boolean);
 
         try {
             // 如果有正在编辑的消息，则发送编辑后的内容
@@ -285,9 +347,13 @@ const ChatWindow = ({
             }
 
             // 发送成功后清理相关文件缓存和本地列表
+            const newCache = new Map(uploadedFilesCache);
             filesToSend.forEach((file) => {
-                uploadedFilesCache.delete(file.id);
+                if (file?.id) {
+                    newCache.delete(file.id);
+                }
             });
+            setUploadedFilesCache(newCache);
             setFiles([]);
             setInputValue("");
         } catch (err) {
@@ -366,8 +432,9 @@ const ChatWindow = ({
                 const newFiles = Array.from(e.target.files);
 
                 try {
-                    // 构造完整的文件信息对象
+                    // 构造完整的文件信息对象，保留原始 File 引用
                     const filesWithInfo = newFiles.map((file) => ({
+                        raw: file,
                         name: file.name,
                         size: file.size,
                         type: file.type,
@@ -378,16 +445,8 @@ const ChatWindow = ({
                     // 立即上传文件（传递完整的文件信息）
                     const uploadedFiles = await handleFileUpload(filesWithInfo);
 
-                    // 上传成功后添加到本地文件列表
-                    setFiles((prev) => [
-                        ...prev,
-                        ...uploadedFiles.map((file) => ({
-                            id: file.id, // 使用服务器返回的文件ID
-                            name: file.name,
-                            size: file.size,
-                            type: file.type,
-                        })),
-                    ]);
+                    // 上传成功后添加到本地文件列表（保留完整信息）
+                    setFiles((prev) => [...prev, ...uploadedFiles]);
                 } catch (error) {
                     console.error("文件上传失败:", error);
                 }
@@ -418,8 +477,9 @@ const ChatWindow = ({
                 const newFiles = Array.from(e.dataTransfer.files);
 
                 try {
-                    // 构造完整的文件信息对象
+                    // 构造完整的文件信息对象，保留原始 File 引用
                     const filesWithInfo = newFiles.map((file) => ({
+                        raw: file,
                         name: file.name,
                         size: file.size,
                         type: file.type,
@@ -428,15 +488,7 @@ const ChatWindow = ({
 
                     // 立即上传文件
                     const uploadedFiles = await handleFileUpload(filesWithInfo);
-                    setFiles((prev) => [
-                        ...prev,
-                        ...uploadedFiles.map((file) => ({
-                            id: file.id,
-                            name: file.name,
-                            size: file.size,
-                            type: file.type,
-                        })),
-                    ]);
+                    setFiles((prev) => [...prev, ...uploadedFiles]);
                 } catch (error) {
                     console.error("文件上传失败:", error);
                 }
@@ -480,6 +532,17 @@ const ChatWindow = ({
         { text: "如何提高科研成果质量?" },
     ];
 
+    const availableInterests = (
+        conversation?.availableInterests || [
+            "临床研究",
+            "基础科研",
+            "科研政策",
+            "人才培养",
+            "项目管理",
+            "成果转化",
+        ]
+    ).filter(Boolean);
+
     return (
         <div className={styles.chatWindow}>
             {/* 使用独立的PdfViewer组件 */}
@@ -522,6 +585,9 @@ const ChatWindow = ({
                             removeFile={removeFile}
                             formatFileSize={formatFileSize}
                             handleFileSelect={handleFileSelect}
+                            userInterests={userInterests}
+                            onToggleInterest={onToggleInterest}
+                        availableInterests={availableInterests}
                         />
                     ) : conversation.messages.length === 0 ? (
                         // 新建对话 - 无消息
@@ -542,20 +608,16 @@ const ChatWindow = ({
                             removeFile={removeFile}
                             formatFileSize={formatFileSize}
                             handleFileSelect={handleFileSelect}
+                            userInterests={userInterests}
+                            onToggleInterest={onToggleInterest}
+                        availableInterests={availableInterests}
                         />
                     ) : (
                         // 有消息的对话
                         <>
                             {conversation.messages.map((msg) => (
                                 <div key={msg.id}>
-                                    {/* 在消息上方显示文件 */}
-                                    {msg.files && msg.files.length > 0 && (
-                                        <MessageFileList
-                                            files={msg.files}
-                                            formatFileSize={formatFileSize}
-                                            onViewPdf={handleViewPdf}
-                                        />
-                                    )}
+                                    {/* 不再显示用户上传的文件 */}
 
                                     <Message
                                         message={msg}
@@ -587,6 +649,22 @@ const ChatWindow = ({
                                                 : null
                                         }
                                         isEditing={editingMessage === msg.id}
+                                        onViewFile={(file) => {
+                                            if (!file) return;
+                                            if (file?.url) {
+                                                setViewingPdf(file);
+                                                return;
+                                            }
+
+                                            if (file?.path) {
+                                                setViewingPdf({
+                                                    ...file,
+                                                    url: file.path,
+                                                });
+                                                return;
+                                            }
+                                        }}
+                                        formatFileSize={formatFileSize}
                                     />
                                 </div>
                             ))}
@@ -620,14 +698,63 @@ const ChatWindow = ({
                             compact={true}
                         />
 
-                        {isGenerating && (
+                {(isGenerating || pendingInterrupt) && (
                             <div className={styles.generatingIndicator}>
                                 <Loader size="small" />
+                                <span className={styles.deepResearchText}>
+                                    正在思考中
+                                </span>
+                                {isGenerating && !pendingInterrupt && !isDeepResearching && (
+                                    <Button
+                                        variant="danger-outline"
+                                        size="small"
+                                        onClick={onInterrupt}>
+                                        停止生成
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+
+                    {/* 多文件进度显示 - 只在有未完成文件时显示 */}
+                    {conversation?.fileProgress &&
+                        Object.keys(conversation.fileProgress).length > 0 &&
+                        Object.values(conversation.fileProgress).some((status) => {
+                            const currentStatus = status?.status;
+                            return (
+                                currentStatus !== "completed" &&
+                                currentStatus !== "done" &&
+                                currentStatus !== "error"
+                            );
+                        }) && (
+                            <MultiFileProgress
+                                fileProgress={conversation.fileProgress}
+                                uploadedFiles={files}
+                            />
+                        )}
+
+                        {userInterests.length > 0 && (
+                            <div className={styles.selectedInterestsBar}>
+                                <div className={styles.selectedInterestsLabel}>关注点：</div>
+                                <div className={styles.selectedInterests}
+                                    >
+                                    {userInterests.map((interest) => (
+                                        <Button
+                                            key={interest}
+                                            variant="outline"
+                                            size="small"
+                                            onClick={() => onToggleInterest(interest)}
+                                            className={styles.selectedInterestTag}>
+                                            {interest}
+                                            <Icon name="CloseOutlined" size={12} />
+                                        </Button>
+                                    ))}
+                                </div>
                                 <Button
-                                    variant="danger-outline"
+                                    variant="outline"
                                     size="small"
-                                    onClick={onInterrupt}>
-                                    停止生成
+                                    onClick={onClearInterests}
+                                    className={styles.clearInterestsBtn}>
+                                    清空
                                 </Button>
                             </div>
                         )}
@@ -663,7 +790,7 @@ const ChatWindow = ({
                                     variant="secondary"
                                     shape="circle"
                                     size="small"
-                                    onClick={handleFileSelect}>
+                            onClick={handleFileSelect}>
                                     <Icon name="PlusOutlined" size={20} />
                                 </Button>
                                 <Button
@@ -706,6 +833,30 @@ const ChatWindow = ({
                 file={viewingPdf}
                 onClose={handleClosePdf}
                 isOpen={!!viewingPdf}
+            />
+
+            {/* 人工审核模态框 */}
+            <InterruptModal
+                isOpen={!!pendingInterrupt}
+                onClose={() => {}} // 不允许直接关闭，必须处理
+                interruptData={pendingInterrupt}
+                onSubmitFeedback={async (feedback) => {
+                    setIsSubmittingFeedback(true);
+                    try {
+                        await onSubmitFeedback(feedback);
+                    } finally {
+                        setIsSubmittingFeedback(false);
+                    }
+                }}
+                onCancel={async () => {
+                    setIsSubmittingFeedback(true);
+                    try {
+                        await onCancelInterrupt();
+                    } finally {
+                        setIsSubmittingFeedback(false);
+                    }
+                }}
+                isSubmitting={isSubmittingFeedback}
             />
         </div>
     );

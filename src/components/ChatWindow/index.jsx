@@ -9,6 +9,7 @@ const ChatWindowContainer = () => {
         conversations,
         activeConversation,
         isGenerating,
+        isDeepResearching,
         isUploading,
         sendMessage,
         interruptConversation,
@@ -19,6 +20,13 @@ const ChatWindowContainer = () => {
         onFavoriteMessage,
         onLikeMessage,
         isConnected,
+        userInterests,
+        toggleUserInterest,
+        clearUserInterests,
+        // 人工审核相关
+        pendingInterrupt,
+        submitFeedback,
+        cancelInterrupt,
     } = useChat();
 
     const conversation = conversations.find((c) => c.id === activeConversation);
@@ -28,6 +36,7 @@ const ChatWindowContainer = () => {
             <ChatWindow
                 conversation={conversation}
                 isGenerating={isGenerating}
+                isDeepResearching={isDeepResearching}
                 isUploading={isUploading} // 传递上传状态
                 onSendMessage={sendMessage}
                 onInterrupt={interruptConversation}
@@ -38,6 +47,13 @@ const ChatWindowContainer = () => {
                 onFavoriteMessage={onFavoriteMessage}
                 onLikeMessage={onLikeMessage}
                 isConnected={isConnected}
+                userInterests={userInterests}
+                onToggleInterest={toggleUserInterest}
+                onClearInterests={clearUserInterests}
+                // 人工审核相关
+                pendingInterrupt={pendingInterrupt}
+                onSubmitFeedback={submitFeedback}
+                onCancelInterrupt={cancelInterrupt}
             />
             {showFileUpload && (
                 <FileUpload onClose={() => setShowFileUpload(false)} />

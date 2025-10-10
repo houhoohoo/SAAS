@@ -1,9 +1,63 @@
 /* eslint-disable no-case-declarations */
 // mock-server.js - 修复版本
+import http from "http";
 import { WebSocketServer } from "ws";
 
-const wss = new WebSocketServer({ port: 8080 });
-console.log("Mock WebSocket server running on ws://localhost:8080");
+const PORT = 8000;
+const ALLOWED_ORIGINS = new Set([
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000"
+]);
+
+const server = http.createServer((req, res) => {
+    const origin = req.headers.origin;
+
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+    } else {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+    }
+
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+
+    if (req.method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+
+    if (req.url === "/health") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ message: "Not Found" }));
+});
+
+const wss = new WebSocketServer({ server });
+wss.on("headers", (headers, request) => {
+    const origin = request.headers.origin;
+
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
+        headers.push(`Access-Control-Allow-Origin: ${origin}`);
+        headers.push("Access-Control-Allow-Credentials: true");
+    } else {
+        headers.push("Access-Control-Allow-Origin: *");
+    }
+});
+
+server.listen(PORT, () => {
+    console.log(`HTTP server listening on http://localhost:${PORT}`);
+    console.log(`Mock WebSocket server running on ws://localhost:${PORT}`);
+});
 
 // 内存存储对话和消息
 let conversations = [
