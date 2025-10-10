@@ -108,7 +108,8 @@ wss.on("connection", (ws) => {
                             }
                         });
                     }
-                    // 生成用户消息ID（使用与前端一致的格式）
+
+                    // 生成用户消息ID
                     const userMsgId = `msg-${Date.now()}-user`;
                     const userMsg = {
                         id: userMsgId,
@@ -121,7 +122,7 @@ wss.on("connection", (ws) => {
                     // 先保存用户消息
                     conv.messages.push(userMsg);
 
-                    // 更新对话标题（如果是新对话的第一个消息）
+                    // 更新对话标题
                     if (conv.messages.length === 1 && payload.message) {
                         conv.title = payload.message.substring(0, 20) + (payload.message.length > 20 ? '...' : '');
                     }
@@ -129,41 +130,101 @@ wss.on("connection", (ws) => {
                     // 立即返回用户消息确认
                     sendResponse(`${MESSAGE_TYPES.SEND_MESSAGE}_response`, {
                         success: true,
-                        userMessage: userMsg, // 返回用户消息确认
+                        userMessage: userMsg,
                         conversationId: payload.conversationId
                     });
 
-                    // 模拟 AI 思考和处理
-                    setTimeout(() => {
-                        // 生成AI消息
-                        const aiMsg = {
-                            id: `msg-${Date.now()}-ai`,
-                            text: generateAIResponse(payload.message, validFiles), // 模拟AI回复
-                            sender: "ai",
-                            timestamp: new Date().toISOString(),
-                            inResponseTo: userMsgId // 关联到用户消息
-                        };
+                    // 生成AI回复内容
+                    const aiResponse = generateAIResponse(payload.message, validFiles);
+                    const aiMsgId = `msg-${Date.now()}-ai`;
 
-                        // 保存AI消息
-                        conv.messages.push(aiMsg);
+                    // 模拟流式返回 - 逐字显示
+                    let currentText = "";
+                    let charIndex = 0;
 
-                        if (payload.files && Array.isArray(payload.files)) {
-                            payload.files.forEach(file => {
-                                if (file.id) {
-                                    uploadedFilesCache.delete(file.id);
-                                }
-                            });
-                        }
-                        // 推送AI回复事件
-                        ws.send(JSON.stringify({
-                            type: MESSAGE_TYPES.MESSAGE_SENT,
-                            payload: {
-                                conversationId: payload.conversationId,
-                                messages: [userMsg, aiMsg], // 只推送AI消息，用户消息已确认
+                    const streamInterval = setInterval(() => {
+                        if (charIndex < aiResponse.length) {
+                            currentText += aiResponse[charIndex];
+                            charIndex++;
+
+                            // 创建或更新AI消息
+                            const aiMsg = {
+                                id: aiMsgId,
+                                text: currentText,
+                                sender: "ai",
+                                timestamp: new Date().toISOString(),
+                                inResponseTo: userMsgId,
+                                isStreaming: charIndex < aiResponse.length // 流式进行中
+                            };
+
+                            // 检查是否已存在该AI消息
+                            const existingMsgIndex = conv.messages.findIndex(m => m.id === aiMsgId);
+                            if (existingMsgIndex === -1) {
+                                // 第一次创建AI消息
+                                conv.messages.push(aiMsg);
+
+                                // 推送新消息事件（包含用户消息和AI消息）
+                                ws.send(JSON.stringify({
+                                    type: MESSAGE_TYPES.MESSAGE_SENT,
+                                    payload: {
+                                        conversationId: payload.conversationId,
+                                        messages: [userMsg, aiMsg] // 同时包含用户消息和AI消息
+                                    }
+                                }));
+                            } else {
+                                // 更新已有的AI消息
+                                conv.messages[existingMsgIndex] = aiMsg;
+
+                                // 推送更新事件
+                                ws.send(JSON.stringify({
+                                    type: MESSAGE_TYPES.MESSAGE_UPDATED,
+                                    payload: {
+                                        conversationId: payload.conversationId,
+                                        messageId: aiMsgId,
+                                        newMessage: aiMsg
+                                    }
+                                }));
                             }
-                        }));
+                        } else {
+                            // 流式结束
+                            clearInterval(streamInterval);
 
-                    }, 1000);
+                            const finalAiMsg = {
+                                id: aiMsgId,
+                                text: currentText,
+                                sender: "ai",
+                                timestamp: new Date().toISOString(),
+                                inResponseTo: userMsgId,
+                                isStreaming: false
+                            };
+
+                            // 更新最终消息
+                            const msgIndex = conv.messages.findIndex(m => m.id === aiMsgId);
+                            if (msgIndex !== -1) {
+                                conv.messages[msgIndex] = finalAiMsg;
+                            }
+
+                            // 清理上传的文件缓存
+                            if (payload.files && Array.isArray(payload.files)) {
+                                payload.files.forEach(file => {
+                                    if (file.id) {
+                                        uploadedFilesCache.delete(file.id);
+                                    }
+                                });
+                            }
+
+                            // 推送最终更新
+                            ws.send(JSON.stringify({
+                                type: MESSAGE_TYPES.MESSAGE_UPDATED,
+                                payload: {
+                                    conversationId: payload.conversationId,
+                                    messageId: aiMsgId,
+                                    newMessage: finalAiMsg
+                                }
+                            }));
+                        }
+                    }, 50); // 每30毫秒一个字，调整这个值可以控制显示速度
+
                     break;
 
                     // 添加一个简单的AI回复生成函数
