@@ -10,12 +10,21 @@ import styles from "./InterruptModal.module.css";
 export const InterruptModal = ({
     isOpen,
     onClose,
-    interruptData,
+    interrupts = [],
+    activeIndex = 0,
+    onSelect,
+    resolveFileName,
     onSubmitFeedback,
     onCancel,
     isSubmitting = false,
 }) => {
     const [feedback, setFeedback] = useState("");
+
+    const hasInterrupts = Array.isArray(interrupts) && interrupts.length > 0;
+    const clampedIndex = hasInterrupts
+        ? Math.max(0, Math.min(activeIndex, interrupts.length - 1))
+        : 0;
+    const interruptData = hasInterrupts ? interrupts[clampedIndex] : null;
 
     if (!isOpen || !interruptData) return null;
 
@@ -23,7 +32,13 @@ export const InterruptModal = ({
         if (!feedback.trim()) return;
         
         try {
-            await onSubmitFeedback(feedback.trim(), interruptData.file_id || null);
+            await onSubmitFeedback(
+                feedback.trim(),
+                {
+                    threadId: interruptData.thread_id,
+                    fileId: interruptData.file_id || null,
+                }
+            );
             setFeedback("");
         } catch (error) {
             console.error("提交反馈失败:", error);
@@ -32,7 +47,10 @@ export const InterruptModal = ({
 
     const handleCancel = async () => {
         try {
-            await onCancel(interruptData.file_id || null);
+            await onCancel({
+                threadId: interruptData.thread_id,
+                fileId: interruptData.file_id || null,
+            });
             setFeedback("");
         } catch (error) {
             console.error("取消审核失败:", error);
@@ -58,6 +76,37 @@ export const InterruptModal = ({
                 </div>
                 
                 <div className={styles.content}>
+                    {hasInterrupts && interrupts.length > 1 && (
+                        <div className={styles.interruptSwitcher}>
+                            <label>待处理文件</label>
+                            <div className={styles.interruptTabs}>
+                                {interrupts.map((item, index) => {
+                                    const fileName = resolveFileName?.(
+                                        item.thread_id,
+                                        item.file_id
+                                    );
+                                    return (
+                                        <button
+                                            key={`${item.thread_id || "global"}-${item.file_id || "all"}-${index}`}
+                                            className={`${styles.interruptTab} ${
+                                                index === clampedIndex ? styles.activeTab : ""
+                                            }`}
+                                            onClick={() => onSelect?.(index)}
+                                            type="button">
+                                            <Icon
+                                                name="FilePdfOutlined"
+                                                size={14}
+                                            />
+                                            <span className={styles.tabFileName}>
+                                                {fileName || item.file_id || "未命名文件"}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     <div className={styles.promptSection}>
                         <div className={styles.promptText}>
                             <ReactMarkdown

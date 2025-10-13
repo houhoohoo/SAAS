@@ -75,6 +75,13 @@
     color: var(--text-color-secondary);
     text-align: center;
     gap: 12px;
+    padding: 24px;
+}
+
+.pdfPlaceholder p {
+    margin: 0;
+    white-space: pre-wrap;
+    line-height: 1.6;
 }
 
 .pdfViewerFooter {

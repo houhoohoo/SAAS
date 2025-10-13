@@ -268,7 +268,10 @@ const ChatWindow = ({
     onToggleInterest,
     onClearInterests,
     // 人工审核相关
-    pendingInterrupt,
+    pendingInterrupts,
+    activeInterrupt,
+    selectInterrupt,
+    resolveInterruptFileName,
     onSubmitFeedback,
     onCancelInterrupt,
 }) => {
@@ -534,12 +537,11 @@ const ChatWindow = ({
 
     const availableInterests = (
         conversation?.availableInterests || [
-            "临床研究",
-            "基础科研",
-            "科研政策",
-            "人才培养",
-            "项目管理",
+            "学术能力",
+            "未来影响",
             "成果转化",
+            "项目创新",
+            "项目可行",
         ]
     ).filter(Boolean);
 
@@ -698,13 +700,13 @@ const ChatWindow = ({
                             compact={true}
                         />
 
-                {(isGenerating || pendingInterrupt) && (
+                {(isGenerating || activeInterrupt) && (
                             <div className={styles.generatingIndicator}>
                                 <Loader size="small" />
                                 <span className={styles.deepResearchText}>
                                     正在思考中
                                 </span>
-                                {isGenerating && !pendingInterrupt && !isDeepResearching && (
+                                {isGenerating && !activeInterrupt && !isDeepResearching && (
                                     <Button
                                         variant="danger-outline"
                                         size="small"
@@ -837,21 +839,24 @@ const ChatWindow = ({
 
             {/* 人工审核模态框 */}
             <InterruptModal
-                isOpen={!!pendingInterrupt}
+                isOpen={pendingInterrupts.length > 0}
                 onClose={() => {}} // 不允许直接关闭，必须处理
-                interruptData={pendingInterrupt}
-                onSubmitFeedback={async (feedback) => {
+                interrupts={pendingInterrupts}
+                activeIndex={activeInterrupt ? pendingInterrupts.findIndex((item) => item && item.thread_id === activeInterrupt.thread_id && item.file_id === activeInterrupt.file_id) : 0}
+                onSelect={selectInterrupt}
+                resolveFileName={resolveInterruptFileName}
+                onSubmitFeedback={async (feedback, target) => {
                     setIsSubmittingFeedback(true);
                     try {
-                        await onSubmitFeedback(feedback);
+                        await onSubmitFeedback(feedback, target);
                     } finally {
                         setIsSubmittingFeedback(false);
                     }
                 }}
-                onCancel={async () => {
+                onCancel={async (target) => {
                     setIsSubmittingFeedback(true);
                     try {
-                        await onCancelInterrupt();
+                        await onCancelInterrupt(target);
                     } finally {
                         setIsSubmittingFeedback(false);
                     }

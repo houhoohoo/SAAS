@@ -24,7 +24,10 @@ const ChatWindowContainer = () => {
         toggleUserInterest,
         clearUserInterests,
         // 人工审核相关
-        pendingInterrupt,
+        pendingInterrupts,
+        activeInterrupt,
+        selectInterrupt,
+        resolveInterruptFileName,
         submitFeedback,
         cancelInterrupt,
     } = useChat();
@@ -51,7 +54,10 @@ const ChatWindowContainer = () => {
                 onToggleInterest={toggleUserInterest}
                 onClearInterests={clearUserInterests}
                 // 人工审核相关
-                pendingInterrupt={pendingInterrupt}
+                pendingInterrupts={pendingInterrupts}
+                activeInterrupt={activeInterrupt}
+                selectInterrupt={selectInterrupt}
+                resolveInterruptFileName={resolveInterruptFileName}
                 onSubmitFeedback={submitFeedback}
                 onCancelInterrupt={cancelInterrupt}
             />

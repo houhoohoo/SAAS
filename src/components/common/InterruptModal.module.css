@@ -67,6 +67,58 @@
     overflow-y: auto;
 }
 
+.interruptSwitcher {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.interruptSwitcher label {
+    font-size: 13px;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+.interruptTabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.interruptTab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #d1d5db;
+    background-color: #f9fafb;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: #4b5563;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.interruptTab:hover {
+    border-color: #6366f1;
+    color: #4338ca;
+}
+
+.interruptTab.activeTab {
+    border-color: #6366f1;
+    background-color: #eef2ff;
+    color: #4338ca;
+    font-weight: 600;
+}
+
+.tabFileName {
+    max-width: 160px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .promptSection {
     margin-bottom: 20px;
 }

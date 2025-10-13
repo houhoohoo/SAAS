@@ -1,7 +1,15 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useState, useContext, useEffect, useRef } from "react";
+import React, {
+    createContext,
+    useState,
+    useContext,
+    useEffect,
+    useRef,
+    useMemo,
+    useCallback,
+} from "react";
 
 import {
     uploadFilesHttp,
@@ -27,6 +35,120 @@ export const ChatProvider = ({ children }) => {
     const [pendingInterrupts, setPendingInterrupts] = useState([]); // 待处理的人工审核中断队列
     const [activeInterruptIndex, setActiveInterruptIndex] = useState(0);
     const sseControllerRef = useRef(null);
+
+    const makeInterruptKey = (interrupt = {}) =>
+        `${interrupt?.thread_id ?? "global"}::${interrupt?.file_id ?? "all"}`;
+
+    const updateInterruptQueue = useCallback((updater, nextActiveKey = null) => {
+        let nextQueueSnapshot = [];
+        setPendingInterrupts((prev) => {
+            const next = updater(prev) || [];
+            nextQueueSnapshot = next;
+            return next;
+        });
+
+        setActiveInterruptIndex((prevIndex) => {
+            if (nextQueueSnapshot.length === 0) {
+                return 0;
+            }
+
+            if (nextActiveKey) {
+                const targetIndex = nextQueueSnapshot.findIndex(
+                    (interrupt) => makeInterruptKey(interrupt) === nextActiveKey
+                );
+                if (targetIndex !== -1) {
+                    return targetIndex;
+                }
+            }
+
+            return Math.min(Math.max(prevIndex, 0), nextQueueSnapshot.length - 1);
+        });
+    }, []);
+
+    const activeInterrupt = useMemo(() => {
+        if (pendingInterrupts.length === 0) return null;
+        const index = Math.min(activeInterruptIndex, pendingInterrupts.length - 1);
+        return pendingInterrupts[index];
+    }, [pendingInterrupts, activeInterruptIndex]);
+
+    const selectInterrupt = useCallback((index) => {
+        setActiveInterruptIndex((prev) => {
+            if (!Number.isFinite(index)) return prev;
+            return Math.max(0, index);
+        });
+    }, []);
+
+    const resolveInterruptFileName = useCallback(
+        (threadId, fileId) => {
+            if (!fileId) return "全部文件";
+
+            const searchConversations = conversations.filter((conv) => {
+                if (!threadId) return true;
+                return conv.threadId === threadId;
+            });
+
+            for (const conv of searchConversations) {
+                const progressEntry = conv.fileProgress?.[fileId];
+                if (progressEntry?.name) return progressEntry.name;
+
+                const messageFile = conv.messages
+                    ?.flatMap((msg) => msg.files || [])
+                    .find((file) => file?.id === fileId);
+                if (messageFile?.name) return messageFile.name;
+            }
+
+            const cachedFile = uploadedFilesCache.get(fileId);
+            if (cachedFile?.name) return cachedFile.name;
+
+            return fileId;
+        },
+        [conversations, uploadedFilesCache]
+    );
+
+    const removeInterruptByKey = useCallback(
+        (threadId, fileId) => {
+            const keyToRemove = makeInterruptKey({ thread_id: threadId, file_id: fileId });
+            updateInterruptQueue(
+                (prev) =>
+                    prev.filter((interrupt) => makeInterruptKey(interrupt) !== keyToRemove),
+                null
+            );
+        },
+        [updateInterruptQueue]
+    );
+
+    const normalizeInterruptTarget = useCallback(
+        (target) => {
+            if (!target) {
+                if (!activeInterrupt) return {};
+                return {
+                    threadId: activeInterrupt.thread_id,
+                    fileId: activeInterrupt.file_id,
+                };
+            }
+
+            if (typeof target === "object") {
+                if (target.thread_id || target.file_id) {
+                    return {
+                        threadId: target.thread_id,
+                        fileId: target.file_id,
+                    };
+                }
+
+                if (target.threadId || target.fileId) {
+                    return {
+                        threadId: target.threadId,
+                        fileId: target.fileId,
+                    };
+                }
+            }
+
+            return {
+                fileId: target,
+            };
+        },
+        [activeInterrupt]
+    );
     // 初始化（SSE模式不需要持久连接，仅设置初始状态）
     useEffect(() => {
         const initialize = async () => {
@@ -447,8 +569,9 @@ export const ChatProvider = ({ children }) => {
                     );
                     setIsGenerating(false);
                     setIsDeepResearching(false);
-                    setPendingInterrupts([]);
-                    setActiveInterruptIndex(0);
+                    updateInterruptQueue((prev) =>
+                        prev.filter((interrupt) => makeInterruptKey(interrupt) !== makeInterruptKey(payload))
+                    );
                     sseControllerRef.current = null;
                 },
                 onError: (payload = {}) => {
@@ -458,7 +581,9 @@ export const ChatProvider = ({ children }) => {
                     setError(messageText);
                     setIsGenerating(false);
                     setIsDeepResearching(false);
-                    setPendingInterrupts((prev) => prev.filter((interrupt) => interrupt.file_id !== fileId));
+                    updateInterruptQueue((prev) =>
+                        prev.filter((interrupt) => makeInterruptKey(interrupt) !== makeInterruptKey(payload))
+                    );
 
                     setConversations((prev) =>
                         prev.map((conv) => {
@@ -510,7 +635,15 @@ export const ChatProvider = ({ children }) => {
                 onInterrupt: (payload) => {
                     // 处理人工审核中断
                     console.log("收到人工审核中断:", payload);
-                    setPendingInterrupt(payload);
+                    updateInterruptQueue((prev) => {
+                        const existingIndex = prev.findIndex((interrupt) => makeInterruptKey(interrupt) === makeInterruptKey(payload));
+                        if (existingIndex !== -1) {
+                            const updated = [...prev];
+                            updated[existingIndex] = payload;
+                            return updated;
+                        }
+                        return [...prev, payload];
+                    });
                     setIsGenerating(false);
                     setIsDeepResearching(false);
                 },
@@ -722,7 +855,7 @@ export const ChatProvider = ({ children }) => {
                 ...c,
                 messages: [
                     ...truncated.map((m, i) => (i === idx ? newUserMsg : m)),
-                    { id: placeholderId, text: "正在deep research...", sender: "ai", timestamp: new Date().toISOString(), isPlaceholder: true },
+                    { id: placeholderId, text: "正在思考...", sender: "ai", timestamp: new Date().toISOString(), isPlaceholder: true },
                 ],
             };
         }));
@@ -846,38 +979,45 @@ export const ChatProvider = ({ children }) => {
         onFavoriteMessage: (messageId) => console.log("收藏消息:", messageId),
         onLikeMessage: (messageId) => console.log("点赞消息:", messageId),
         // 人工审核相关
-        pendingInterrupt,
-        submitFeedback: async (feedback, fileId = null) => {
-            if (!pendingInterrupt?.thread_id) {
+        pendingInterrupts,
+        activeInterrupt,
+        selectInterrupt,
+        resolveInterruptFileName,
+        submitFeedback: async (feedback, target = null) => {
+            const { threadId, fileId } = normalizeInterruptTarget(target);
+
+            if (!threadId) {
                 throw new Error("没有待处理的审核中断");
             }
             
             try {
                 await chatControl({
-                    threadId: pendingInterrupt.thread_id,
+                    threadId,
                     action: "resume",
                     feedback,
-                    fileId: fileId || pendingInterrupt.file_id || null,
+                    fileId: fileId || null,
                 });
-                setPendingInterrupt(null);
+                removeInterruptByKey(threadId, fileId || null);
                 console.log("反馈已提交，流程将继续");
             } catch (error) {
                 console.error("提交反馈失败:", error);
                 throw error;
             }
         },
-        cancelInterrupt: async (fileId = null) => {
-            if (!pendingInterrupt?.thread_id) {
+        cancelInterrupt: async (target = null) => {
+            const { threadId, fileId } = normalizeInterruptTarget(target);
+
+            if (!threadId) {
                 throw new Error("没有待处理的审核中断");
             }
             
             try {
                 await chatControl({
-                    threadId: pendingInterrupt.thread_id,
+                    threadId,
                     action: "cancel",
-                    fileId: fileId || pendingInterrupt.file_id || null,
+                    fileId: fileId || null,
                 });
-                setPendingInterrupt(null);
+                removeInterruptByKey(threadId, fileId || null);
                 console.log("已取消审核流程");
             } catch (error) {
                 console.error("取消审核失败:", error);
