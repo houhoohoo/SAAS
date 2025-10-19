@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import remarkGfm from "remark-gfm";
@@ -7,6 +7,7 @@ import "katex/dist/katex.min.css";
 import Button from "../common/Button";
 import Icon from "../common/Icon";
 import ToastMessage from "../common/ToastMessage";
+import ChartBlock from "./ChartBlock";
 import styles from "./ChatWindow.module.css";
 
 const Message = ({
@@ -16,7 +17,6 @@ const Message = ({
     onFavorite,
     onLike,
     isEditing,
-    onViewFile,
     formatFileSize,
 }) => {
     const isAI = message.sender === "ai";
@@ -47,6 +47,76 @@ const Message = ({
 
     const [showToast, setShowToast] = useState(false);
 
+    const contentSegments = useMemo(() => {
+        const rawText = message.text || "";
+        const segments = [];
+
+        if (!rawText) {
+            return segments;
+        }
+
+        const pushMarkdownSegment = (textSegment) => {
+            if (!textSegment) return;
+            segments.push({ type: "markdown", content: textSegment });
+        };
+
+        let cursor = 0;
+
+        while (cursor < rawText.length) {
+            const fenceStart = rawText.indexOf("```", cursor);
+
+            if (fenceStart === -1) {
+                pushMarkdownSegment(rawText.slice(cursor));
+                break;
+            }
+
+            if (fenceStart > cursor) {
+                pushMarkdownSegment(rawText.slice(cursor, fenceStart));
+            }
+
+            const infoStart = fenceStart + 3;
+            const infoEnd = rawText.indexOf("\n", infoStart);
+
+            if (infoEnd === -1) {
+                segments.push({ type: "chart_pending" });
+                break;
+            }
+
+            const infoString = rawText.slice(infoStart, infoEnd).trim();
+            const closingIndex = rawText.indexOf("```", infoEnd + 1);
+
+            if (closingIndex === -1) {
+                segments.push({ type: "chart_pending" });
+                break;
+            }
+
+            const jsonStr = rawText.slice(infoEnd + 1, closingIndex).trim();
+            const infoLower = infoString.toLowerCase();
+
+            if (infoLower.startsWith("json") && infoLower.includes("chart")) {
+                try {
+                    const parsed = JSON.parse(jsonStr);
+                    segments.push({ type: "chart", data: parsed, raw: jsonStr });
+                } catch (error) {
+                    segments.push({ type: "chart_error", raw: jsonStr, error });
+                }
+            } else {
+                pushMarkdownSegment(rawText.slice(fenceStart, closingIndex + 3));
+            }
+
+            cursor = closingIndex + 3;
+
+            if (rawText[cursor] === "\r") {
+                cursor += 1;
+            }
+            if (rawText[cursor] === "\n") {
+                cursor += 1;
+            }
+        }
+
+        return segments;
+    }, [message.text]);
+
     const handleCopy = async () => {
         try {
             await navigator.clipboard.writeText(message.text);
@@ -74,12 +144,62 @@ const Message = ({
                             <div className={styles.errorText}>{message.text}</div>
                         ) : isAI ? (
                             <div className={styles.markdownContent}>
-                                <ReactMarkdown
-                                    remarkPlugins={[remarkGfm, remarkMath]}
-                                    rehypePlugins={[rehypeKatex]}
-                                >
-                                    {message.text || ""}
-                                </ReactMarkdown>
+                                {contentSegments.length === 0 ? (
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm, remarkMath]}
+                                        rehypePlugins={[rehypeKatex]}
+                                    >
+                                        {message.text || ""}
+                                    </ReactMarkdown>
+                                ) : (
+                                    contentSegments.map((segment, index) => {
+                                        if (segment.type === "markdown") {
+                                            return (
+                                                <ReactMarkdown
+                                                    key={`markdown-${index}`}
+                                                    remarkPlugins={[remarkGfm, remarkMath]}
+                                                    rehypePlugins={[rehypeKatex]}
+                                                >
+                                                    {segment.content}
+                                                </ReactMarkdown>
+                                            );
+                                        }
+
+                                        if (segment.type === "chart") {
+                                            return (
+                                                <ChartBlock
+                                                    key={`chart-${index}`}
+                                                    data={segment.data}
+                                                    rawJson={segment.raw}
+                                                />
+                                            );
+                                        }
+
+                                        if (segment.type === "chart_pending") {
+                                            return (
+                                                <div
+                                                    key={`chart-pending-${index}`}
+                                                    className={styles.chartPlaceholder}
+                                                >
+                                                    图表生成中...
+                                                </div>
+                                            );
+                                        }
+
+                                        if (segment.type === "chart_error") {
+                                            return (
+                                                <div
+                                                    key={`chart-error-${index}`}
+                                                    className={styles.chartError}
+                                                >
+                                                    无法解析图表数据
+                                                </div>
+                                            );
+                                        }
+
+                                        return null;
+                                    })
+                                )}
                             </div>
                         ) : (
                             message.text
@@ -97,7 +217,16 @@ const Message = ({
                                         key={`${file.id || file.url || file.name || index}`}
                                         variant="outline"
                                         size="small"
-                                        onClick={() => onViewFile?.(file)}
+                                        onClick={() => {
+                                            if (!file?.url) return;
+                                            if (typeof window !== "undefined") {
+                                                window.open(
+                                                    file.url,
+                                                    "_blank",
+                                                    "noopener,noreferrer"
+                                                );
+                                            }
+                                        }}
                                         disabled={!file?.url}
                                         className={styles.attachmentButton}>
                                         <span className={styles.attachmentButtonContent}>

@@ -292,11 +292,6 @@ const ChatWindow = ({
     const [uploadedFilesCache, setUploadedFilesCache] = useState(new Map());
     const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
-    // 查看PDF文件
-    const handleViewPdf = (file) => {
-        setViewingPdf(file);
-    };
-
     // 关闭PDF预览
     const handleClosePdf = () => {
         if (viewingPdf?.url?.startsWith("blob:")) {
@@ -651,21 +646,6 @@ const ChatWindow = ({
                                                 : null
                                         }
                                         isEditing={editingMessage === msg.id}
-                                        onViewFile={(file) => {
-                                            if (!file) return;
-                                            if (file?.url) {
-                                                setViewingPdf(file);
-                                                return;
-                                            }
-
-                                            if (file?.path) {
-                                                setViewingPdf({
-                                                    ...file,
-                                                    url: file.path,
-                                                });
-                                                return;
-                                            }
-                                        }}
                                         formatFileSize={formatFileSize}
                                     />
                                 </div>
@@ -700,7 +680,7 @@ const ChatWindow = ({
                             compact={true}
                         />
 
-                {(isGenerating || activeInterrupt) && (
+                        {(isGenerating || activeInterrupt) && (
                             <div className={styles.generatingIndicator}>
                                 <Loader size="small" />
                                 <span className={styles.deepResearchText}>
@@ -714,6 +694,27 @@ const ChatWindow = ({
                                         停止生成
                                     </Button>
                                 )}
+                                <Button
+                                    variant="outline"
+                                    size="small"
+                                    onClick={() => {
+                                        if (!activeInterrupt) {
+                                            onInterrupt?.();
+                                        } else {
+                                            onCancelInterrupt(activeInterrupt);
+                                        }
+                                    }}
+                                    disabled={!isGenerating && !activeInterrupt}
+                                    title={
+                                        activeInterrupt
+                                            ? "暂停当前审核"
+                                            : isGenerating
+                                                ? "暂停当前生成"
+                                                : "暂无可暂停任务"
+                                    }
+                                    className={styles.pauseButton}>
+                                    <Icon name="PauseOutlined" size={18} />
+                                </Button>
                             </div>
                         )}
 
