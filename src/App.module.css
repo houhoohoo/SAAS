@@ -7,9 +7,6 @@
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .app {
-    flex-direction: column;
-  }
 
   .sidebar {
     width: 100%;
